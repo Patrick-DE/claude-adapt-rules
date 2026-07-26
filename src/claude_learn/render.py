@@ -14,7 +14,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from .extract import repo_root
+from .extract import rules_dir
 from .ledger import Ledger, Rule
 
 BEGIN_MARKER = "<!-- claude-learn:begin -->"
@@ -140,7 +140,7 @@ def write_tier_files(ledger: Ledger, out: Path | None = None) -> list[Path]:
     Defaults to the ledger's own directory so a ledger pointed elsewhere (tests,
     a second machine) never writes into this repo.
     """
-    root = out or ledger.path.parent or repo_root() / "rules"
+    root = out or ledger.path.parent or rules_dir()
     written: list[Path] = []
 
     global_dir = root / "global"

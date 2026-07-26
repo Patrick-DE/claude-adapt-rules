@@ -1,0 +1,33 @@
+{
+  "name": "claude-learn",
+  "version": "0.1.0",
+  "description": "Mines your Claude Code sessions for the corrections you had to repeat, then distils them into evidence-backed rules — per-repo automatically, global only with your approval.",
+  "author": {
+    "name": "Patrick Eisenschmidt"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "rules",
+    "claude-md",
+    "transcripts",
+    "self-improvement",
+    "memory",
+    "python"
+  ],
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/capture.sh\"",
+            "timeout": 20,
+            "statusMessage": "claude-learn: capturing session"
+          }
+        ]
+      }
+    ]
+  }
+}

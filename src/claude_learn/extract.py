@@ -26,13 +26,32 @@ MAX_CONTEXT_CHARS = 600
 
 
 def repo_root() -> Path:
+    """The installation directory. NOT a place to keep state.
+
+    When claude-learn runs as a plugin this is
+    ``~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`` — a new version
+    means a new directory, so anything stored here is orphaned on every update.
+    """
     return Path(__file__).resolve().parents[2]
+
+
+def home_dir() -> Path:
+    """Where state lives: ledger, corpus, queue, archive. Survives updates."""
+    if env := os.environ.get("CLAUDE_LEARN_HOME"):
+        return Path(env)
+    return Path.home() / ".claude-learn"
 
 
 def data_dir() -> Path:
     if env := os.environ.get("CLAUDE_LEARN_DATA_DIR"):
         return Path(env)
-    return repo_root() / "data"
+    return home_dir() / "data"
+
+
+def rules_dir() -> Path:
+    if env := os.environ.get("CLAUDE_LEARN_RULES_DIR"):
+        return Path(env)
+    return home_dir() / "rules"
 
 
 @dataclass(slots=True)

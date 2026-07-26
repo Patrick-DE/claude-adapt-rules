@@ -1,5 +1,7 @@
-# Pipeline output: corpus, queue, reports, hook logs. Regenerable from transcripts.
+# User state never belongs in the install directory. Both live in ~/.claude-learn/;
+# these entries only catch runs that point CLAUDE_LEARN_HOME back at the repo.
 data/
+rules/
 
 # Python
 __pycache__/

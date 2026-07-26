@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .extract import repo_root
+from .extract import rules_dir
 
 SCHEMA_VERSION = 1
 
@@ -294,6 +294,7 @@ class Ledger:
 
 
 def default_ledger_path() -> Path:
+    """User state, never the install directory — see extract.repo_root."""
     if env := os.environ.get("CLAUDE_LEARN_LEDGER"):
         return Path(env)
-    return repo_root() / "rules" / "ledger.json"
+    return rules_dir() / "ledger.json"

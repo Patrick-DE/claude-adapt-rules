@@ -27,6 +27,44 @@ skill payloads). The 1325 real prompts are all in `queue-operation` records.
 A miner that reads `type: "user"` learns nothing about the user. Both channels are read
 here, queue preferred, overlaps de-duplicated.
 
+## Install
+
+As a Claude Code plugin, from a local checkout:
+
+```bash
+claude plugin marketplace add /path/to/claude-learn
+```
+
+Then enable `claude-learn`. That registers the `SessionEnd` capture hook and the
+`/learn-rules` skill. Requires Python 3.12+ on PATH; the hook shim tries `python3`,
+`python`, then `py`.
+
+| Platform | What loads | Notes |
+| --- | --- | --- |
+| Claude Code (macOS/Linux) | skill + SessionEnd hook | via `bin/capture.sh` |
+| Claude Code (Windows) | skill + SessionEnd hook | needs Git Bash for the hook; without it, point the hook at `bin/capture.ps1` |
+| Antigravity / Gemini | skill + `GEMINI.md` context | no session-end hook — run `extract` manually or on a schedule |
+| Codex | skill + `AGENTS.md` context | same |
+
+**State lives in `~/.claude-learn/`** (`CLAUDE_LEARN_HOME` overrides), never inside the
+plugin directory — installed plugins live under a versioned cache path, so an update
+would orphan your ledger, queue and archive.
+
+```
+~/.claude-learn/
+  rules/ledger.json          rule identity, evidence, adoption dates, violations
+  rules/global/PROPOSED.md   awaiting your approval
+  rules/repos/<project>/     auto-written per-project rules
+  rules/candidates/          distilled candidate batches
+  data/corpus, queue, archive, reports
+```
+
+Run the CLI from anywhere without installing the package:
+
+```bash
+bin/claude-learn.sh status      # or bin\claude-learn.ps1 status on Windows
+```
+
 ## Pipeline
 
 ```
@@ -129,13 +167,15 @@ The distil step stays manual: it needs a model, and the `claude` CLI is not on P
 ## Layout
 
 ```
-src/claude_learn/     transcripts, signals, extract, ledger, render, verify, cli
-.claude/skills/learn-rules/SKILL.md   the model-facing distillation instructions
-hooks/                session-end capture + weekly extract
-rules/ledger.json     rule identity, evidence, adoption dates, violation counts
-rules/candidates/     distilled candidate batches (model output — versioned)
-rules/global/         PROPOSED.md (awaiting you) and ADOPTED.md (the spliced block)
-rules/repos/<proj>/   auto-written per-project rules
-data/                 gitignored: corpus, bundles, queue, reports
-tests/                42 tests, run with `python -m pytest`
+src/claude_learn/       transcripts, signals, extract, ledger, render, verify, archive, cli
+skills/learn-rules/     the model-facing distillation instructions
+bin/                    capture shims (hook) + claude-learn CLI wrappers
+hooks/                  weekly extract for Task Scheduler (.ps1) and cron (.sh)
+.claude-plugin/         Claude Code plugin + marketplace manifests
+.codex-plugin/          Codex manifest; AGENTS.md is its context file
+gemini-extension.json   Antigravity / Gemini manifest; GEMINI.md is its context file
+tests/                  57 tests, run with `python -m pytest`
 ```
+
+No rules ship with the plugin — the ledger starts empty and everything you distil stays
+in `~/.claude-learn/`.
