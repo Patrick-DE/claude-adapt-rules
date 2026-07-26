@@ -1,4 +1,4 @@
-"""Fixtures that build transcripts in the same shape Claude Code writes them."""
+﻿"""Fixtures that build transcripts in the same shape Claude Code writes them."""
 
 from __future__ import annotations
 

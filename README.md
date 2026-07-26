@@ -7,8 +7,8 @@ Two tiers, because the cost of a rule is not the same everywhere:
 
 | Tier | Target | Policy |
 | --- | --- | --- |
-| **repo** | `rules/repos/<project>/rules.md` | auto-written; blast radius is one project, and it's a git diff away from gone |
-| **global** | `rules/global/PROPOSED.md` → `~/.claude/CLAUDE.md` | proposed only, you approve; every line is loaded in every session of every project |
+| **repo** | `~/.claude-learn/rules/repos/<project>/rules.md` | auto-written; blast radius is one project, and it's a git diff away from gone |
+| **global** | `~/.claude-learn/rules/global/PROPOSED.md` → `~/.claude/CLAUDE.md` | proposed only, you approve; every line is loaded in every session of every project |
 
 ## Where the human text actually is
 
@@ -80,7 +80,7 @@ unrelated work in other projects.
 ```bash
 python -m claude_learn.cli status                 # parse and report, write nothing
 python -m claude_learn.cli extract                # corpus + per-project bundles
-python -m claude_learn.cli ingest rules/candidates/<date>.json
+python -m claude_learn.cli ingest ~/.claude-learn/rules/candidates/<date>.json
 python -m claude_learn.cli verify                 # every quote must be verbatim
 python -m claude_learn.cli adopt R-0001 --apply-global
 python -m claude_learn.cli rot                    # which rules aren't working
@@ -152,17 +152,22 @@ To keep raw history longer, raise retention in `~/.claude/settings.json`:
 
 ## Automation
 
-- **SessionEnd hook** (`hooks/session_end_capture.ps1`, wired in `~/.claude/settings.json`)
-  appends each finished session's candidates to `data/queue/queue.jsonl`. No model, no
-  network, always exits 0.
-- **Weekly task** `claude-learn weekly extract` (Windows Task Scheduler, Mondays 09:00)
-  re-extracts full history via `hooks/weekly_extract.ps1`. Remove with:
+- **SessionEnd hook** — declared by the plugin (`bin/capture.sh`, or `bin/capture.ps1` on
+  Windows without bash). Appends each finished session's candidates to
+  `~/.claude-learn/data/queue/queue.jsonl`. No model, no network, always exits 0.
+- **Weekly refresh** — `hooks/weekly_extract.ps1` (Windows Task Scheduler) or
+  `hooks/weekly_extract.sh` (cron). Both re-extract full history and then archive.
 
 ```bash
-schtasks /Delete /TN "claude-learn weekly extract" /F
+schtasks /Create /TN "claude-learn weekly" /SC WEEKLY /D MON /ST 09:00 /TR "powershell -NoProfile -ExecutionPolicy Bypass -File C:\path\to\claude-learn\hooks\weekly_extract.ps1"
 ```
 
-The distil step stays manual: it needs a model, and the `claude` CLI is not on PATH here.
+```bash
+0 9 * * 1 /path/to/claude-learn/hooks/weekly_extract.sh
+```
+
+The distil step stays manual: it needs a model. Run `/learn-rules` when the bundles look
+worth reading.
 
 ## Layout
 

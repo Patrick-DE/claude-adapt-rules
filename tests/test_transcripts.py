@@ -1,4 +1,4 @@
-"""What counts as a human prompt, and what must never count as one."""
+﻿"""What counts as a human prompt, and what must never count as one."""
 
 from __future__ import annotations
 
@@ -184,7 +184,7 @@ def test_interrupt_marker_flags_but_is_not_a_prompt(make_transcript):
 
 def test_friendly_project_name():
     assert friendly_project_name("C--Users-alice-sources-repos-web-api") == "web-api"
-    assert friendly_project_name("F--RE-SomeMcpServer") == "RE-SomeMcpServer"
+    assert friendly_project_name("F--Tools-SomeMcpServer") == "Tools-SomeMcpServer"
     # cwd is only a fallback: the slug is authoritative so one project keeps one name.
     assert friendly_project_name("C--Users-alice-sources-repos-app", cwd=r"C:\x\other") == "app"
     assert friendly_project_name("C--Users-alice-", cwd=r"C:\a\b\my-app") == "my-app"

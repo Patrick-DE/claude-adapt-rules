@@ -202,13 +202,13 @@ def cutoff(days: int) -> datetime:
 
 
 # Slugs are the cwd with separators flattened:
-# "C:\Users\alice\src\web-api" -> "C--Users-alice-sources-repos-web-api"
+# "C:\Users\alice\src\my-app" -> "C--Users-alice-src-my-app"
 _SLUG_PREFIX_RE = re.compile(
     r"^[A-Za-z]--(?:Users-[^-]+-)?(?:sources-)?(?:repos-)?", re.IGNORECASE
 )
 
 # Worktrees get their own slug:
-#   ...repos-my-app--claude-worktrees-brave-newton-a1b2c3
+#   ...src-my-app--claude-worktrees-brave-newton-a1b2c3
 # They are the same repository. Left un-normalised, a worktree counts as a second
 # project and wrongly promotes that repo's quirks to global scope.
 _WORKTREE_RE = re.compile(r"--claude-worktrees-.*$|[\\/]\.claude-worktrees[\\/].*$")

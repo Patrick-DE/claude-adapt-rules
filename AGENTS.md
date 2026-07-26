@@ -34,7 +34,7 @@ install directory.
 ## Development
 
 ```bash
-python -m pytest        # 53 tests, stdlib-only runtime
+python -m pytest        # 57 tests, stdlib-only runtime
 ```
 
 Runtime code imports nothing outside the standard library: the session-end hook loads it
