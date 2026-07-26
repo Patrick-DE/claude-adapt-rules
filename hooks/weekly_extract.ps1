@@ -31,6 +31,11 @@ try {
     $output = & $python -m claude_learn.cli extract 2>&1
     Add-Content -Path $log -Value "[$stamp] extract (full history)"
     Add-Content -Path $log -Value ($output | Out-String).TrimEnd()
+
+    # Claude Code deletes transcripts after cleanupPeriodDays (default 30). Archive
+    # every cited session right after extraction, or rules outlive their evidence.
+    $archived = & $python -m claude_learn.cli archive 2>&1
+    Add-Content -Path $log -Value ($archived | Out-String).TrimEnd()
     Add-Content -Path $log -Value "[$stamp] next step: run /learn-rules to distil the refreshed bundles"
 }
 catch {

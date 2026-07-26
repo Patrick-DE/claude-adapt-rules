@@ -91,6 +91,27 @@ inner quotes, so grepping file bytes gives false failures — hence decoded comp
 
 The first real run produced two bad quotes out of 48, both mine, both caught this way.
 
+## Transcripts expire — archive or the audit trail rots
+
+Claude Code deletes transcripts after `cleanupPeriodDays` (**default 30**). Measured
+2026-07-26: the oldest file in `~/.claude/projects` was exactly 30 days old, and four
+evidence quotes from rules distilled that same morning already cited deleted sessions.
+
+```bash
+python -m claude_learn.cli archive        # cited sessions only
+python -m claude_learn.cli archive --all  # every session, before it ages out
+```
+
+The weekly job archives after every extract. `verify` reads the archive too, and reports a
+vanished transcript as **expired** rather than as bad evidence — decay must not look like
+fabrication.
+
+To keep raw history longer, raise retention in `~/.claude/settings.json`:
+
+```json
+{ "cleanupPeriodDays": 365 }
+```
+
 ## Automation
 
 - **SessionEnd hook** (`hooks/session_end_capture.ps1`, wired in `~/.claude/settings.json`)

@@ -60,6 +60,34 @@ def test_machine_pseudo_prompts_excluded(make_transcript):
     assert parse_session(path).prompts == []
 
 
+def test_injected_skill_body_is_not_a_prompt(make_transcript):
+    """A slash command pastes the whole SKILL.md in; unfiltered it outscores real corrections."""
+    body = (
+        "# Update Config Skill\n\nModify Claude Code configuration by updating "
+        "settings.json files.\n\n## CRITICAL: Read Before Write\n\nAlways read first."
+    )
+    path = make_transcript([enqueue(body)])
+    assert parse_session(path).prompts == []
+
+
+def test_slash_command_arguments_are_the_human_part(make_transcript):
+    body = (
+        "# How claude-mem works\n\nEvery Read, Edit and Bash becomes an observation.\n\n"
+        "ARGUMENTS: do we keep track of what was already ingested so we do not double ingest?"
+    )
+    path = make_transcript([enqueue(body)])
+    assert texts(parse_session(path)) == [
+        "do we keep track of what was already ingested so we do not double ingest?"
+    ]
+
+
+def test_bare_slash_command_dropped_but_trailing_request_kept(make_transcript):
+    path = make_transcript(
+        [enqueue("/claude-mem:how-it-works"), enqueue("/simplify never inline styles here")]
+    )
+    assert texts(parse_session(path)) == ["never inline styles here"]
+
+
 def test_system_reminder_stripped_but_human_text_kept(make_transcript):
     path = make_transcript(
         [enqueue("<system-reminder>be careful</system-reminder>\nsplit that file")]

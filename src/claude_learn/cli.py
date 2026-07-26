@@ -104,6 +104,37 @@ def cmd_queue(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pending(args: argparse.Namespace) -> int:
+    """Show queue events not yet distilled; optionally write them as a bundle."""
+    out = Path(args.out) if args.out else None
+    records = extract_mod.pending_events(out)
+    total = len(extract_mod.load_queue(out))
+    print(f"queued events ....... {total}")
+    print(f"already distilled ... {total - len(records)}")
+    print(f"pending ............. {len(records)}")
+    if args.bundle:
+        path = Path(args.bundle)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(extract_mod.render_pending_bundle(records), encoding="utf-8")
+        print(f"bundle .............. {path}")
+    for rec in records[: args.top]:
+        text = " ".join(str(rec.get("text") or "").split())[:100]
+        print(f"  [{rec.get('score'):>3}] {str(rec.get('ts'))[:10]} {text}")
+    return 0
+
+
+def cmd_consume(args: argparse.Namespace) -> int:
+    """Mark pending queue events as distilled so they are not re-read."""
+    out = Path(args.out) if args.out else None
+    records = extract_mod.pending_events(out)
+    if not records:
+        print("nothing pending")
+        return 0
+    added = extract_mod.mark_consumed(records, out=out, note=args.note or "")
+    print(f"marked {added} event(s) consumed; {len(records) - added} were already marked")
+    return 0
+
+
 def cmd_ingest(args: argparse.Namespace) -> int:
     payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
     candidates = payload.get("rules", payload) if isinstance(payload, dict) else payload
@@ -199,6 +230,7 @@ def cmd_rot(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     """Fail if any rule cites a quote that is not verbatim in the cited session."""
+    from . import archive as archive_mod
     from . import verify as verify_mod
 
     ledger = Ledger(Path(args.ledger) if args.ledger else None)
@@ -206,13 +238,41 @@ def cmd_verify(args: argparse.Namespace) -> int:
         ledger,
         root=Path(args.root) if args.root else None,
         exclude=args.exclude or (),
+        archive=list(archive_mod.archived_files(Path(args.out) if args.out else None)),
     )
     print(f"evidence quotes checked ...... {result.checked}")
     print(f"verbatim in the cited session  {result.exact}")
-    print(f"problems .................... {len(result.problems)}")
-    for problem in result.problems:
+    print(f"bad evidence ................ {len(result.failures)}")
+    print(f"transcript deleted since .... {len(result.expired)}")
+    for problem in result.failures:
         print(f"  {problem.rule_id} [{problem.session}] {problem.kind}: {problem.quote[:80]}")
+    for problem in result.expired:
+        print(f"  {problem.rule_id} [{problem.session}] transcript gone — archive earlier next time")
     return 0 if result.ok else 1
+
+
+def cmd_archive(args: argparse.Namespace) -> int:
+    """Copy transcripts that rules depend on out of the auto-cleanup path."""
+    from . import archive as archive_mod
+
+    out = Path(args.out) if args.out else None
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    sessions = None if args.all else archive_mod.cited_sessions(ledger)
+    result = archive_mod.archive(
+        sessions=sessions, root=Path(args.root) if args.root else None, out=out
+    )
+    scope = "all sessions" if args.all else f"{len(sessions or ())} cited session(s)"
+    print(f"archiving {scope} -> {archive_mod.archive_dir(out)}")
+    print(f"  copied ..... {result.copied}")
+    print(f"  refreshed .. {result.refreshed}")
+    print(f"  unchanged .. {result.skipped}")
+    print(f"  bytes ...... {result.total_bytes:,}")
+    if result.missing:
+        print(
+            f"  ! {len(result.missing)} cited session(s) already deleted and not archived: "
+            f"{', '.join(result.missing)}"
+        )
+    return 0
 
 
 def cmd_session(args: argparse.Namespace) -> int:
@@ -255,6 +315,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_queue.add_argument("--quiet", action="store_true")
     p_queue.set_defaults(func=cmd_queue)
 
+    p_pending = sub.add_parser("pending", help="queue events not yet distilled")
+    p_pending.add_argument("--out")
+    p_pending.add_argument("--bundle", help="write the pending events as a markdown bundle")
+    p_pending.add_argument("--top", type=int, default=10)
+    p_pending.set_defaults(func=cmd_pending)
+
+    p_consume = sub.add_parser("consume", help="mark pending queue events as distilled")
+    p_consume.add_argument("--out")
+    p_consume.add_argument("--note", help="what consumed them, e.g. a candidates filename")
+    p_consume.set_defaults(func=cmd_consume)
+
     p_ingest = sub.add_parser("ingest", help="apply distilled rule candidates")
     p_ingest.add_argument("file")
     p_ingest.add_argument("--ledger")
@@ -281,9 +352,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_rot.add_argument("--quiet-days", type=int, default=30)
     p_rot.set_defaults(func=cmd_rot)
 
+    p_archive = sub.add_parser(
+        "archive", help="copy cited transcripts out of the 30-day cleanup path"
+    )
+    p_archive.add_argument("--ledger")
+    p_archive.add_argument("--root")
+    p_archive.add_argument("--out")
+    p_archive.add_argument("--all", action="store_true", help="archive every session, not just cited ones")
+    p_archive.set_defaults(func=cmd_archive)
+
     p_verify = sub.add_parser("verify", help="check every rule's evidence is verbatim")
     p_verify.add_argument("--ledger")
     p_verify.add_argument("--root")
+    p_verify.add_argument("--out")
     p_verify.add_argument(
         "--exclude",
         nargs="*",

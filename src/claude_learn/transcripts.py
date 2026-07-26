@@ -85,7 +85,18 @@ _MACHINE_PROMPT_RES: tuple[re.Pattern[str], ...] = (
     re.compile(r"^\s*<(?:task-notification|local-command|command-)"),
     re.compile(r"^Your task is to create a detailed summary of the conversation"),
     re.compile(r"^Please continue the conversation from where"),
+    # A slash command injects the whole SKILL.md body on the human channel. Its
+    # H1 is the skill title; scored raw it outranks every real correction.
+    re.compile(r"^#\s+.*\bskill\b", re.IGNORECASE),
+    re.compile(r"^---\s*\nname:\s", re.MULTILINE),
 )
+
+# `/name` or `/plugin:name`, optionally followed by the real request.
+_SLASH_COMMAND_RE = re.compile(r"^/[A-Za-z0-9][\w.:-]*\s*")
+
+# When a slash command carries arguments, the injected body ends with the user's
+# own words after this marker. That text is the only human part of the message.
+_ARGUMENTS_RE = re.compile(r"^ARGUMENTS:\s*(.*)$", re.MULTILINE | re.DOTALL)
 
 # Exact strings, taken from real transcripts.
 _USER_DENIAL_RE = re.compile(
@@ -262,8 +273,16 @@ def clean_prompt_text(text: str) -> str:
         text = (text[: m.start()] + text[end + len(closing) :]).strip()
     if _INTERRUPT_RE.match(text):
         return ""
+    # A slash command with arguments: everything before ARGUMENTS: is injected
+    # skill text, everything after it is what the user actually typed.
+    if (m := _ARGUMENTS_RE.search(text)) and m.group(1).strip():
+        text = m.group(1).strip()
     if is_machine_prompt(text):
         return ""
+    # Bare `/command` carries no preference; `/command do the thing` does.
+    stripped = _SLASH_COMMAND_RE.sub("", text, count=1).strip()
+    if stripped != text:
+        text = stripped
     return text
 
 

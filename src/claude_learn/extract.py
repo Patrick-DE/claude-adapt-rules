@@ -270,3 +270,128 @@ def queue_transcript(transcript: Path, out: Path | None = None) -> int:
             fh.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
             written += 1
     return written
+
+
+# --------------------------------------------------------------------------- #
+# Queue consumption
+#
+# The queue is append-only, so without a consumed marker every distillation run
+# re-reads every event ever captured. The ledger would absorb the repeats (they
+# merge into existing rules), but the model pays to re-read old evidence and
+# cannot tell what arrived since last time.
+# --------------------------------------------------------------------------- #
+
+
+def queue_path(out: Path | None = None) -> Path:
+    return (out or data_dir()) / "queue" / "queue.jsonl"
+
+
+def queue_state_path(out: Path | None = None) -> Path:
+    return (out or data_dir()) / "queue" / "queue.state.json"
+
+
+def load_queue(out: Path | None = None) -> list[dict]:
+    path = queue_path(out)
+    if not path.exists():
+        return []
+    records: list[dict] = []
+    with path.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(rec, dict):
+                records.append(rec)
+    return records
+
+
+def _record_key(rec: dict) -> str:
+    return f"{rec.get('session')}:{rec.get('uuid')}"
+
+
+def load_queue_state(out: Path | None = None) -> dict:
+    path = queue_state_path(out)
+    if not path.exists():
+        return {"consumed": [], "runs": []}
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, ValueError, OSError):
+        return {"consumed": [], "runs": []}
+    state.setdefault("consumed", [])
+    state.setdefault("runs", [])
+    return state
+
+
+def pending_events(out: Path | None = None) -> list[dict]:
+    """Queue entries not yet marked consumed, newest scoring first."""
+    consumed = set(load_queue_state(out).get("consumed", []))
+    pending = [r for r in load_queue(out) if _record_key(r) not in consumed]
+    pending.sort(key=lambda r: (-int(r.get("score") or 0), str(r.get("ts") or "")))
+    return pending
+
+
+def mark_consumed(
+    records: Sequence[dict], out: Path | None = None, note: str = ""
+) -> int:
+    """Record these queue entries as distilled. Idempotent."""
+    state = load_queue_state(out)
+    consumed: list[str] = list(state.get("consumed", []))
+    known = set(consumed)
+    added = 0
+    for rec in records:
+        key = _record_key(rec)
+        if key in known:
+            continue
+        consumed.append(key)
+        known.add(key)
+        added += 1
+    state["consumed"] = consumed
+    state["runs"] = [
+        *state.get("runs", []),
+        {
+            "at": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
+            "consumed": added,
+            "note": note,
+        },
+    ]
+    path = queue_state_path(out)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return added
+
+
+def render_pending_bundle(records: Sequence[dict]) -> str:
+    """Evidence bundle for the queue, same reading order as a project bundle."""
+    lines = [
+        "# Pending evidence (session-end queue)",
+        "",
+        f"- events awaiting distillation: {len(records)}",
+        "",
+        "Quote verbatim from `User said`. After filing candidates, run",
+        "`python -m claude_learn.cli consume` so these are not re-read next time.",
+        "",
+    ]
+    for i, rec in enumerate(records, start=1):
+        signals = ", ".join(
+            list(rec.get("lexical") or []) + list(rec.get("structural") or [])
+        )
+        lines += [
+            f"## Q{i} · score {rec.get('score')} · {signals or 'none'}",
+            "",
+            f"- project `{rec.get('project_name') or rec.get('project')}` · "
+            f"session `{rec.get('session')}` · {rec.get('ts')}",
+        ]
+        if rec.get("prev_tools"):
+            tools = ", ".join(dict.fromkeys(rec["prev_tools"]))
+            lines.append(f"- agent had just used: {tools}")
+        lines += ["", "**User said:**", ""]
+        text = _truncate(str(rec.get("text") or ""), MAX_TEXT_CHARS)
+        lines += ["> " + line for line in text.splitlines()]
+        lines.append("")
+    return "\n".join(lines) + "\n"

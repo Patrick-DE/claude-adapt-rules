@@ -106,6 +106,29 @@ every project).
 python -m claude_learn.cli rot     # what to escalate, what to retire
 ```
 
+## Always archive after ingesting
+
+```bash
+python -m claude_learn.cli archive
+```
+
+Claude Code deletes transcripts after 30 days by default. A rule outlives its transcript,
+so unarchived evidence becomes unverifiable — `verify` will report it as *expired*, and it
+cannot be recovered. Archive in the same run that files the rules.
+
+## Working from the session-end queue
+
+The `SessionEnd` hook accumulates events in `data/queue/queue.jsonl`. Distil from the
+pending slice, not the whole queue:
+
+```bash
+python -m claude_learn.cli pending --bundle data/corpus/pending.md
+# ... write candidates from that bundle, then ingest ...
+python -m claude_learn.cli consume --note rules/candidates/<date>.json
+```
+
+Without `consume`, every run re-reads every event ever captured.
+
 ## Reporting back
 
 State: events read, rules created (with ids and scope), violations of existing rules, and

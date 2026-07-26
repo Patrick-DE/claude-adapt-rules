@@ -68,7 +68,7 @@ def quote_fragments(quote: str) -> list[str]:
 class Problem:
     rule_id: str
     session: str
-    kind: str  # "not_found" | "wrong_session"
+    kind: str  # "not_found" | "wrong_session" | "session_gone"
     quote: str
 
 
@@ -79,14 +79,37 @@ class VerifyResult:
     problems: list[Problem] = field(default_factory=list)
 
     @property
+    def expired(self) -> list[Problem]:
+        """Evidence whose transcript was deleted by transcript cleanup."""
+        return [p for p in self.problems if p.kind == "session_gone"]
+
+    @property
+    def failures(self) -> list[Problem]:
+        """Evidence that is actually wrong, as opposed to merely gone."""
+        return [p for p in self.problems if p.kind != "session_gone"]
+
+    @property
     def ok(self) -> bool:
-        return not self.problems
+        """A deleted transcript is decay, not a bad quote — it must not read as one."""
+        return not self.failures
 
 
-def load_sessions(root: Path | None = None, exclude: Iterable[str] = ()) -> dict[str, str]:
-    """Map session-id prefix -> decoded text. Prefix keys match short ids in evidence."""
+def load_sessions(
+    root: Path | None = None,
+    exclude: Iterable[str] = (),
+    archive: Iterable[Path] | None = None,
+) -> dict[str, str]:
+    """Map session-id prefix -> decoded text.
+
+    Archived copies are loaded first so live transcripts win on the same id; both
+    are read, because cleanup deletes live transcripts long before rules retire.
+    """
     excluded = {e[:8] for e in exclude}
     sessions: dict[str, str] = {}
+    for path in archive or ():
+        sid = path.stem[:8]
+        if sid not in excluded:
+            sessions[sid] = decoded_session_text(path)
     for path in iter_session_files(root or projects_root()):
         sid = path.stem[:8]
         if sid in excluded:
@@ -102,17 +125,25 @@ def verify_rules(rules: Iterable[Rule], sessions: dict[str, str]) -> VerifyResul
         for ev in rule.evidence:
             result.checked += 1
             fragments = quote_fragments(ev.quote)
-            cited = sessions.get(ev.session[:8], "")
+            key = ev.session[:8]
+            cited = sessions.get(key, "")
             if fragments and all(f in cited for f in fragments):
                 result.exact += 1
             elif fragments and all(f in everything for f in fragments):
                 result.problems.append(Problem(rule.id, ev.session, "wrong_session", ev.quote))
+            elif key not in sessions:
+                result.problems.append(Problem(rule.id, ev.session, "session_gone", ev.quote))
             else:
                 result.problems.append(Problem(rule.id, ev.session, "not_found", ev.quote))
     return result
 
 
 def verify_ledger(
-    ledger: Ledger, root: Path | None = None, exclude: Iterable[str] = ()
+    ledger: Ledger,
+    root: Path | None = None,
+    exclude: Iterable[str] = (),
+    archive: Iterable[Path] | None = None,
 ) -> VerifyResult:
-    return verify_rules(ledger.rules.values(), load_sessions(root, exclude))
+    return verify_rules(
+        ledger.rules.values(), load_sessions(root, exclude, archive=archive)
+    )

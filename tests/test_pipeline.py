@@ -56,6 +56,68 @@ def test_queue_is_idempotent(make_transcript, tmp_path):
     assert len(queue) == 1
 
 
+def test_pending_excludes_consumed_events(make_transcript, tmp_path):
+    path = make_transcript(
+        [
+            enqueue("no, that is wrong, never do it that way", ts="2026-07-01T10:00:00Z"),
+            enqueue("stop mocking the database, it is wrong", ts="2026-07-01T11:00:00Z"),
+        ]
+    )
+    out = tmp_path / "data"
+    extract_mod.queue_transcript(path, out=out)
+    assert len(extract_mod.pending_events(out)) == 2
+
+    first = extract_mod.pending_events(out)[:1]
+    extract_mod.mark_consumed(first, out=out, note="candidates/x.json")
+
+    remaining = extract_mod.pending_events(out)
+    assert len(remaining) == 1
+    assert remaining[0]["uuid"] != first[0]["uuid"]
+    # The queue itself is untouched: consumption is a marker, not a deletion.
+    assert len(extract_mod.load_queue(out)) == 2
+
+
+def test_consume_is_idempotent(make_transcript, tmp_path):
+    path = make_transcript([enqueue("don't do that, it is wrong")])
+    out = tmp_path / "data"
+    extract_mod.queue_transcript(path, out=out)
+    records = extract_mod.pending_events(out)
+
+    assert extract_mod.mark_consumed(records, out=out) == 1
+    assert extract_mod.mark_consumed(records, out=out) == 0
+    assert extract_mod.pending_events(out) == []
+    state = extract_mod.load_queue_state(out)
+    assert len(state["consumed"]) == 1
+    assert len(state["runs"]) == 2  # both attempts recorded
+
+
+def test_pending_bundle_lists_events_and_next_step(make_transcript, tmp_path, capsys):
+    path = make_transcript([enqueue("no, never mock the backend, that is wrong")])
+    out = tmp_path / "data"
+    extract_mod.queue_transcript(path, out=out)
+    bundle = tmp_path / "pending.md"
+
+    assert main(["pending", "--out", str(out), "--bundle", str(bundle)]) == 0
+    text = bundle.read_text(encoding="utf-8")
+    assert "never mock the backend" in text
+    assert "consume" in text
+    assert "pending ............. 1" in capsys.readouterr().out
+
+    assert main(["consume", "--out", str(out), "--note", "candidates/x.json"]) == 0
+    assert "nothing pending" in _run_pending_again(out)
+
+
+def _run_pending_again(out) -> str:
+    """Second consume run must report nothing left."""
+    import io
+    import contextlib
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        main(["consume", "--out", str(out)])
+    return buf.getvalue()
+
+
 def test_queue_command_never_fails_the_session(tmp_path, capsys):
     """A capture hook that can fail is a capture hook that breaks unrelated work."""
     out = tmp_path / "data"
