@@ -1,0 +1,10 @@
+# Pipeline output: corpus, queue, reports, hook logs. Regenerable from transcripts.
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/

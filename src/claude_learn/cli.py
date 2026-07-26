@@ -1,0 +1,308 @@
+"""Command line entry point.
+
+    python -m claude_learn.cli status              # what's in the transcripts
+    python -m claude_learn.cli extract             # build corpus + bundles
+    python -m claude_learn.cli queue --transcript  # SessionEnd hook target
+    python -m claude_learn.cli ingest cands.json   # apply distilled candidates
+    python -m claude_learn.cli adopt R-0001 --apply-global
+    python -m claude_learn.cli rot                 # which rules aren't working
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import sys
+import traceback
+from datetime import datetime, timezone
+from pathlib import Path
+
+from . import extract as extract_mod
+from . import render as render_mod
+from .ledger import Ledger
+from .signals import score_session, select
+from .transcripts import cutoff, parse_all, projects_root
+
+
+def _since(days: int | None) -> datetime | None:
+    return cutoff(days) if days else None
+
+
+def _print_stats(stats, title: str) -> None:
+    print(f"{title}")
+    print(f"  sessions parsed .............. {stats.sessions}")
+    print(f"  projects ..................... {len(stats.projects)}")
+    print(f"  raw type:user records ........ {stats.raw_user_records}")
+    print(f"  queue enqueues (human submits)  {stats.queued_records}")
+    print(f"  duplicates across channels ... {stats.duplicate_records}")
+    print(f"  human prompts (noise removed)  {stats.prompts}")
+    print(f"    of which acknowledgements .. {stats.acknowledgements}")
+    print(f"  synthetic records dropped .... {stats.dropped_synthetic}")
+    print(f"  malformed lines tolerated .... {stats.bad_lines}")
+    print(f"  events selected as evidence .. {stats.selected}")
+    if stats.by_signal:
+        print("  signals:")
+        for name, count in sorted(stats.by_signal.items(), key=lambda kv: -kv[1]):
+            print(f"    {count:6d}  {name}")
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    root = Path(args.root) if args.root else projects_root()
+    events, stats = extract_mod.collect(
+        parse_all(root, _since(args.since)), min_score=args.min_score
+    )
+    _print_stats(stats, f"transcripts: {root}")
+    if args.top:
+        print(f"\n  top {args.top} events:")
+        for event in events[: args.top]:
+            text = " ".join(event.prompt.text.split())[:110]
+            print(
+                f"    [{event.score:3d}] {event.prompt.ts[:10]} "
+                f"{event.prompt.project_name[:24]:24s} {text}"
+            )
+    return 0
+
+
+def cmd_extract(args: argparse.Namespace) -> int:
+    root = Path(args.root) if args.root else None
+    result = extract_mod.run_extract(
+        root=root,
+        since=_since(args.since),
+        out=Path(args.out) if args.out else None,
+        min_score=args.min_score,
+        max_events=args.max_events,
+    )
+    _print_stats(result.stats, "extraction complete")
+    print(f"\n  corpus ....... {result.corpus}")
+    print(f"  report ....... {result.report}")
+    print(f"  bundles ...... {len(result.bundles)} in {result.bundles[0].parent if result.bundles else '-'}")
+    for project, dropped in sorted(result.truncated.items()):
+        print(f"    ! {project}: {dropped} lower-scoring events omitted (cap reached)")
+    return 0
+
+
+def cmd_queue(args: argparse.Namespace) -> int:
+    """Hook target. Never fails loudly: a capture step must not break a session."""
+    out = Path(args.out) if args.out else extract_mod.data_dir()
+    try:
+        transcript = Path(args.transcript)
+        if not transcript.is_file():
+            raise FileNotFoundError(transcript)
+        written = extract_mod.queue_transcript(transcript, out=out)
+        if not args.quiet:
+            print(f"queued {written} event(s) from {transcript.name}")
+    except Exception:  # noqa: BLE001 - deliberate: hooks must not raise
+        try:
+            out.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+            with (out / "hook.log").open("a", encoding="utf-8") as fh:
+                fh.write(f"[{stamp}] queue failed for {args.transcript}\n")
+                fh.write(traceback.format_exc())
+        except OSError:
+            pass
+    return 0
+
+
+def cmd_ingest(args: argparse.Namespace) -> int:
+    payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    candidates = payload.get("rules", payload) if isinstance(payload, dict) else payload
+    if not isinstance(candidates, list):
+        print("error: expected a JSON list of candidates, or {\"rules\": [...]}")
+        return 2
+
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    result = ledger.ingest(candidates)
+    ledger.save()
+    written = render_mod.write_tier_files(ledger)
+
+    print(f"created ..... {len(result.created)}: {render_mod.summarize(result.created)}")
+    print(f"merged ...... {len(result.merged)}")
+    print(f"violations .. {len(result.violations)}: {render_mod.summarize(result.violations)}")
+    for cand, why in result.rejected:
+        print(f"  rejected: {why} :: {str(cand.get('rule'))[:70]}")
+    for rule in result.created:
+        print(f"  {rule.id} [{rule.scope}] {rule.rule[:80]}")
+    print(f"\nwrote {len(written)} file(s); ledger: {ledger.path}")
+    if result.violations:
+        print("\nRules broken again after adoption — reword, hoist, or convert to a hook:")
+        for rule in result.violations:
+            print(f"  {rule.id} (x{rule.violation_count}) {rule.rule[:70]}")
+    return 0
+
+
+def cmd_adopt(args: argparse.Namespace) -> int:
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    adopted = [r for rid in args.ids if (r := ledger.adopt(rid))]
+    missing = set(args.ids) - {r.id for r in adopted}
+    ledger.save()
+    render_mod.write_tier_files(ledger)
+    print(f"adopted: {render_mod.summarize(adopted)}")
+    if missing:
+        print(f"unknown ids: {', '.join(sorted(missing))}")
+
+    if not args.apply_global:
+        return 0
+
+    block = render_mod.render_global_block(ledger)
+    lines = render_mod.block_line_count(block)
+    target = Path(args.claudemd) if args.claudemd else Path.home() / ".claude" / "CLAUDE.md"
+    existing = target.read_text(encoding="utf-8") if target.exists() else ""
+    if lines > render_mod.GLOBAL_BLOCK_MAX_LINES:
+        print(
+            f"refusing to write: global block is {lines} lines "
+            f"(cap {render_mod.GLOBAL_BLOCK_MAX_LINES}). Retire rules or move them "
+            f"to ~/.claude/memory/."
+        )
+        return 1
+    if target.exists():
+        backup = target.with_suffix(target.suffix + ".claude-learn.bak")
+        shutil.copy2(target, backup)
+        print(f"backup: {backup}")
+    target.write_text(render_mod.splice_block(existing, block), encoding="utf-8")
+    print(f"applied {lines}-line global block to {target}")
+    return 0
+
+
+def cmd_retire(args: argparse.Namespace) -> int:
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    retired = [r for rid in args.ids if (r := ledger.retire(rid))]
+    ledger.save()
+    render_mod.write_tier_files(ledger)
+    print(f"retired: {render_mod.summarize(retired)}")
+    return 0
+
+
+def cmd_render(args: argparse.Namespace) -> int:
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    written = render_mod.write_tier_files(ledger)
+    for path in written:
+        print(path)
+    return 0
+
+
+def cmd_rot(args: argparse.Namespace) -> int:
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    buckets = ledger.rot_report(quiet_days=args.quiet_days)
+    print(f"still violated (last {args.quiet_days}d) — escalate:")
+    for rule in buckets["escalate"] or []:
+        print(f"  {rule.id} x{rule.violation_count} [{rule.scope}] {rule.rule[:70]}")
+    if not buckets["escalate"]:
+        print("  none")
+    print(f"\nquiet for {args.quiet_days}d — retire candidates:")
+    for rule in buckets["quiet"] or []:
+        print(f"  {rule.id} [{rule.scope}] {rule.rule[:70]}")
+    if not buckets["quiet"]:
+        print("  none")
+    return 0
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Fail if any rule cites a quote that is not verbatim in the cited session."""
+    from . import verify as verify_mod
+
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    result = verify_mod.verify_ledger(
+        ledger,
+        root=Path(args.root) if args.root else None,
+        exclude=args.exclude or (),
+    )
+    print(f"evidence quotes checked ...... {result.checked}")
+    print(f"verbatim in the cited session  {result.exact}")
+    print(f"problems .................... {len(result.problems)}")
+    for problem in result.problems:
+        print(f"  {problem.rule_id} [{problem.session}] {problem.kind}: {problem.quote[:80]}")
+    return 0 if result.ok else 1
+
+
+def cmd_session(args: argparse.Namespace) -> int:
+    """Score a single transcript and print it, for debugging the detectors."""
+    from .transcripts import parse_session
+
+    session = parse_session(Path(args.transcript))
+    events = select(score_session(session.prompts), min_score=args.min_score)
+    print(f"{session.project_name} · {session.session}")
+    print(f"  prompts: {len(session.prompts)}  selected: {len(events)}  bad lines: {session.bad_lines}")
+    for event in events:
+        text = " ".join(event.prompt.text.split())[:120]
+        print(f"  [{event.score:3d}] {','.join(event.signals):40s} {text}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="claude-learn", description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    def common(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--root", help="transcript root (default ~/.claude/projects)")
+        p.add_argument("--since", type=int, metavar="DAYS", help="only sessions touched in the last N days")
+        p.add_argument("--min-score", type=int, default=3)
+
+    p_status = sub.add_parser("status", help="parse and report, write nothing")
+    common(p_status)
+    p_status.add_argument("--top", type=int, default=10)
+    p_status.set_defaults(func=cmd_status)
+
+    p_extract = sub.add_parser("extract", help="write corpus + per-project bundles")
+    common(p_extract)
+    p_extract.add_argument("--out", help="data dir (default <repo>/data)")
+    p_extract.add_argument("--max-events", type=int, default=extract_mod.MAX_EVENTS_PER_PROJECT)
+    p_extract.set_defaults(func=cmd_extract)
+
+    p_queue = sub.add_parser("queue", help="append one session's events to the queue")
+    p_queue.add_argument("--transcript", required=True)
+    p_queue.add_argument("--out")
+    p_queue.add_argument("--quiet", action="store_true")
+    p_queue.set_defaults(func=cmd_queue)
+
+    p_ingest = sub.add_parser("ingest", help="apply distilled rule candidates")
+    p_ingest.add_argument("file")
+    p_ingest.add_argument("--ledger")
+    p_ingest.set_defaults(func=cmd_ingest)
+
+    p_adopt = sub.add_parser("adopt", help="mark rules adopted")
+    p_adopt.add_argument("ids", nargs="+")
+    p_adopt.add_argument("--ledger")
+    p_adopt.add_argument("--apply-global", action="store_true", help="splice into ~/.claude/CLAUDE.md")
+    p_adopt.add_argument("--claudemd", help="override target CLAUDE.md")
+    p_adopt.set_defaults(func=cmd_adopt)
+
+    p_retire = sub.add_parser("retire", help="mark rules retired")
+    p_retire.add_argument("ids", nargs="+")
+    p_retire.add_argument("--ledger")
+    p_retire.set_defaults(func=cmd_retire)
+
+    p_render = sub.add_parser("render", help="rewrite rule files from the ledger")
+    p_render.add_argument("--ledger")
+    p_render.set_defaults(func=cmd_render)
+
+    p_rot = sub.add_parser("rot", help="which adopted rules are working")
+    p_rot.add_argument("--ledger")
+    p_rot.add_argument("--quiet-days", type=int, default=30)
+    p_rot.set_defaults(func=cmd_rot)
+
+    p_verify = sub.add_parser("verify", help="check every rule's evidence is verbatim")
+    p_verify.add_argument("--ledger")
+    p_verify.add_argument("--root")
+    p_verify.add_argument(
+        "--exclude",
+        nargs="*",
+        help="session ids to ignore (e.g. the session that wrote the rules)",
+    )
+    p_verify.set_defaults(func=cmd_verify)
+
+    p_session = sub.add_parser("session", help="debug the detectors on one transcript")
+    p_session.add_argument("transcript")
+    p_session.add_argument("--min-score", type=int, default=3)
+    p_session.set_defaults(func=cmd_session)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return int(args.func(args) or 0)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
