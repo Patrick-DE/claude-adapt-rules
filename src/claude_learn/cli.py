@@ -15,14 +15,14 @@ import json
 import shutil
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import extract as extract_mod
 from . import render as render_mod
 from .ledger import Ledger
 from .signals import score_session, select
-from .transcripts import cutoff, parse_all, projects_root
+from .transcripts import cutoff, iter_session_files, parse_all, projects_root
 
 
 def _since(days: int | None) -> datetime | None:
@@ -275,6 +275,105 @@ def cmd_archive(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Report whether the pipeline is actually working.
+
+    Hooks fail open by design, so a broken capture is invisible: eight BOM failures
+    sat unnoticed in hook.log. This is the command that surfaces them.
+    """
+    from . import archive as archive_mod
+    from . import inject as inject_mod
+
+    home = extract_mod.home_dir()
+    data = extract_mod.data_dir()
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    problems: list[str] = []
+
+    print(f"state home ................... {home}")
+    print(f"  exists ..................... {home.is_dir()}")
+    if not home.is_dir():
+        problems.append("state directory missing; run `extract` once")
+
+    rules = list(ledger.rules.values())
+    adopted = [r for r in rules if r.status == "adopted"]
+    proposed = [r for r in rules if r.status == "proposed"]
+    repo_scopes = sorted({r.scope for r in rules if r.scope.startswith("repo:")})
+    print(f"ledger ....................... {ledger.path}")
+    print(f"  rules ...................... {len(rules)} ({len(adopted)} adopted, {len(proposed)} proposed)")
+    print(f"  projects with repo rules ... {len(repo_scopes)}")
+    if proposed_global := [r for r in proposed if r.scope == "global"]:
+        print(f"  ! {len(proposed_global)} global rule(s) awaiting your approval")
+
+    queue = extract_mod.load_queue()
+    pending = extract_mod.pending_events()
+    print(f"queue ........................ {extract_mod.queue_path()}")
+    print(f"  captured ................... {len(queue)}")
+    print(f"  pending distillation ....... {len(pending)}")
+
+    log = data / "hook.log"
+    if log.exists():
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+        failures = [line for line in lines if "failed" in line]
+        # The log is append-only, so old entries are history, not open problems. Only
+        # failures inside the window are actionable.
+        window = (
+            datetime.now(tz=timezone.utc) - timedelta(days=args.failure_days)
+        ).isoformat(timespec="seconds")
+        recent = [line for line in failures if line[1:20] >= window[:19]]
+        print(f"hook failures logged ......... {len(failures)} ({len(recent)} in last {args.failure_days}d)")
+        if failures:
+            print(f"  last ....................... {failures[-1][:100]}")
+        if args.reset_log:
+            log.rename(log.with_suffix(".log.reviewed"))
+            print(f"  log moved to ............... {log.with_suffix('.log.reviewed')}")
+        elif recent:
+            problems.append(
+                f"{len(recent)} hook failure(s) in the last {args.failure_days} days: {log}"
+            )
+    else:
+        print("hook failures logged ......... 0")
+
+    archived = list(archive_mod.archived_files())
+    size = sum(p.stat().st_size for p in archived) if archived else 0
+    print(f"archive ...................... {len(archived)} session(s), {size / 1_048_576:.0f} MB")
+
+    live = list(iter_session_files())
+    if live:
+        now = datetime.now(tz=timezone.utc).timestamp()
+        oldest = min(p.stat().st_mtime for p in live)
+        print(f"oldest live transcript ....... {(now - oldest) / 86400:.0f} days")
+        archived_ids = {p.stem[:8] for p in archived}
+        unarchived = [p for p in live if p.stem[:8] not in archived_ids]
+        # A fresh session being unarchived is normal: `archive` copies cited sessions,
+        # and a session is only cited once it has been extracted. It becomes a problem
+        # as it approaches the cleanup age, because then it is about to be deleted.
+        at_risk = [
+            p for p in unarchived if (now - p.stat().st_mtime) / 86400 >= args.at_risk_days
+        ]
+        print(f"  unarchived ................. {len(unarchived)} ({len(at_risk)} near cleanup age)")
+        if at_risk:
+            problems.append(
+                f"{len(at_risk)} transcript(s) older than {args.at_risk_days}d are unarchived "
+                f"and will be deleted; run `archive --all`"
+            )
+
+    # Does the current project actually receive its rules?
+    cwd = Path(args.cwd) if args.cwd else Path.cwd()
+    injection = inject_mod.build(str(cwd), ledger)
+    project = inject_mod.project_name_from_cwd(str(cwd))
+    print(f"context for '{project}' ....... ", end="")
+    print(f"{len(injection.rules)} rule(s), {len(injection.text)} chars" if injection else "none")
+
+    print()
+    if problems:
+        print("problems:")
+        for problem in problems:
+            print(f"  - {problem}")
+        return 1
+    print("no problems found")
+    return 0
+
+
 def cmd_session(args: argparse.Namespace) -> int:
     """Score a single transcript and print it, for debugging the detectors."""
     from .transcripts import parse_session
@@ -374,6 +473,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="session ids to ignore (e.g. the session that wrote the rules)",
     )
     p_verify.set_defaults(func=cmd_verify)
+
+    p_doctor = sub.add_parser("doctor", help="is the pipeline actually working?")
+    p_doctor.add_argument("--ledger")
+    p_doctor.add_argument("--cwd", help="project to check rule delivery for (default: current)")
+    p_doctor.add_argument("--failure-days", type=int, default=7)
+    p_doctor.add_argument(
+        "--at-risk-days",
+        type=int,
+        default=21,
+        help="unarchived transcripts this old are treated as about to be deleted",
+    )
+    p_doctor.add_argument(
+        "--reset-log", action="store_true", help="set hook.log aside once reviewed"
+    )
+    p_doctor.set_defaults(func=cmd_doctor)
 
     p_session = sub.add_parser("session", help="debug the detectors on one transcript")
     p_session.add_argument("transcript")

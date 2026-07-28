@@ -15,6 +15,7 @@ bin/claude-learn.sh ingest <candidates.json>
 bin/claude-learn.sh consume --note <candidates.json>
 bin/claude-learn.sh archive     # copy cited transcripts out of the cleanup path
 bin/claude-learn.sh verify      # every quote must be verbatim
+bin/claude-learn.sh doctor      # is the pipeline working? hooks fail open
 bin/claude-learn.sh rot         # which adopted rules are still being broken
 ```
 

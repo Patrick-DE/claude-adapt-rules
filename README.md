@@ -35,15 +35,15 @@ As a Claude Code plugin, from a local checkout:
 claude plugin marketplace add /path/to/claude-learn
 ```
 
-Then enable `claude-learn`. That registers the `SessionEnd` capture hook and the
-`/learn-rules` skill. Requires Python 3.12+ on PATH; the hook shim tries `python3`,
-`python`, then `py`.
+Then enable `claude-learn`. That registers two hooks — `SessionStart` (inject this
+project's rules) and `SessionEnd` (capture corrections) — plus the `/learn-rules` skill.
+Requires Python on PATH as `python`.
 
 | Platform | What loads | Notes |
 | --- | --- | --- |
-| Claude Code (macOS/Linux) | skill + SessionEnd hook | via `bin/capture.sh` |
-| Claude Code (Windows) | skill + SessionEnd hook | needs Git Bash for the hook; without it, point the hook at `bin/capture.ps1` |
-| Antigravity / Gemini | skill + `GEMINI.md` context | no session-end hook — run `extract` manually or on a schedule |
+| Claude Code (Windows) | skill + both hooks | primary target; hooks exec `python` directly, no shell needed |
+| Claude Code (macOS/Linux) | skill + both hooks | change `command` to `python3` in `.claude-plugin/plugin.json` if `python` is absent |
+| Antigravity / Gemini | skill + `GEMINI.md` context | no session hooks — run `extract` on a schedule and read rules from `~/.claude-learn/` |
 | Codex | skill + `AGENTS.md` context | same |
 
 **State lives in `~/.claude-learn/`** (`CLAUDE_LEARN_HOME` overrides), never inside the
@@ -64,6 +64,26 @@ Run the CLI from anywhere without installing the package:
 ```bash
 bin/claude-learn.sh status      # or bin\claude-learn.ps1 status on Windows
 ```
+
+## How rules reach a session
+
+Distilling rules is worthless if nothing reads them. Both tiers have a delivery path:
+
+| Tier | Delivery |
+| --- | --- |
+| **repo** | a `SessionStart` hook injects the current project's rules as session context — nothing is written into your other repositories, so teammates see no diff and a reworded rule takes effect next session |
+| **global** | `adopt --apply-global` splices a marked block into `~/.claude/CLAUDE.md` after you name the ids |
+
+Sessions started inside a git worktree receive the parent repository's rules. Projects with
+no rules get nothing — the hook prints nothing and exits 0.
+
+```bash
+claude-learn doctor      # is any of this actually working?
+```
+
+`doctor` exists because hooks fail open: a broken capture is silent by design. It reports
+captured/pending events, recent hook failures, archive coverage, transcripts approaching
+the cleanup age, and how many rules the current project would receive.
 
 ## Pipeline
 
@@ -152,9 +172,14 @@ To keep raw history longer, raise retention in `~/.claude/settings.json`:
 
 ## Automation
 
-- **SessionEnd hook** — declared by the plugin (`bin/capture.sh`, or `bin/capture.ps1` on
-  Windows without bash). Appends each finished session's candidates to
+- **SessionStart hook** (`bin/inject.py`) — puts the current project's rules into context.
+- **SessionEnd hook** (`bin/capture.py`, or `bin/capture.sh` / `bin/capture.ps1` as shims)
+  appends each finished session's candidates to
   `~/.claude-learn/data/queue/queue.jsonl`. No model, no network, always exits 0.
+
+Both are declared by the plugin and exec `python` directly, so neither needs a shell — on
+Windows that removes the Git Bash dependency. Where only `python3` exists, change the
+`command` in `.claude-plugin/plugin.json`.
 - **Weekly refresh** — `hooks/weekly_extract.ps1` (Windows Task Scheduler) or
   `hooks/weekly_extract.sh` (cron). Both re-extract full history and then archive.
 
@@ -172,14 +197,14 @@ worth reading.
 ## Layout
 
 ```
-src/claude_learn/       transcripts, signals, extract, ledger, render, verify, archive, cli
+src/claude_learn/       transcripts, signals, extract, ledger, render, verify, archive, inject, cli
 skills/learn-rules/     the model-facing distillation instructions
-bin/                    capture shims (hook) + claude-learn CLI wrappers
+bin/                    hook entry points (capture, inject) + claude-learn CLI wrappers
 hooks/                  weekly extract for Task Scheduler (.ps1) and cron (.sh)
 .claude-plugin/         Claude Code plugin + marketplace manifests
 .codex-plugin/          Codex manifest; AGENTS.md is its context file
 gemini-extension.json   Antigravity / Gemini manifest; GEMINI.md is its context file
-tests/                  57 tests, run with `python -m pytest`
+tests/                  66 tests, run with `python -m pytest`
 ```
 
 No rules ship with the plugin — the ledger starts empty and everything you distil stays

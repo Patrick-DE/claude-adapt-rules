@@ -15,6 +15,7 @@ bin/claude-learn.sh ingest <candidates.json>
 bin/claude-learn.sh consume --note <candidates.json>
 bin/claude-learn.sh archive     # copy cited transcripts out of the cleanup path
 bin/claude-learn.sh verify      # every quote must be verbatim
+bin/claude-learn.sh doctor      # is the pipeline working? hooks fail open
 bin/claude-learn.sh rot         # which adopted rules are still being broken
 ```
 
@@ -34,7 +35,7 @@ install directory.
 ## Development
 
 ```bash
-python -m pytest        # 57 tests, stdlib-only runtime
+python -m pytest        # 66 tests, stdlib-only runtime
 ```
 
 Runtime code imports nothing outside the standard library: the session-end hook loads it

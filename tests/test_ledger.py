@@ -40,6 +40,21 @@ def test_single_project_stays_repo_scoped():
     assert decide_scope([Evidence("s1", "t", "q", "alpha")]) == "repo:alpha"
 
 
+def test_repo_rules_are_adopted_on_ingest_so_rot_tracks_them(tmp_path):
+    """They are written and injected immediately; 'proposed' hid them from rot."""
+    ledger = Ledger(tmp_path / "ledger.json")
+    repo_rule = ledger.ingest([cand("use pnpm in this repo", [ev("alpha", "s1")])]).created[0]
+    assert repo_rule.scope == "repo:alpha"
+    assert repo_rule.status == "adopted"
+    assert repo_rule.adopted
+
+    global_rule = ledger.ingest(
+        [cand("verify before claiming done", [ev("alpha", "s2"), ev("beta", "s3")])]
+    ).created[0]
+    assert global_rule.scope == "global"
+    assert global_rule.status == "proposed"  # global still needs a human yes
+
+
 def test_model_cannot_promote_past_the_gate(tmp_path):
     ledger = Ledger(tmp_path / "ledger.json")
     result = ledger.ingest(

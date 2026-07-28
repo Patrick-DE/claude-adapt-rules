@@ -219,6 +219,15 @@ def canonical_project(slug: str) -> str:
     return _WORKTREE_RE.sub("", slug) or slug
 
 
+def project_name_from_cwd(cwd: str) -> str:
+    """Project name for a working directory, collapsing worktree paths.
+
+    A session started inside a worktree belongs to the repository it branches from,
+    so it must see that repository's rules.
+    """
+    return Path(_WORKTREE_RE.sub("", str(cwd))).name
+
+
 def friendly_project_name(slug: str, cwd: str = "") -> str:
     """Human-readable project name.
 

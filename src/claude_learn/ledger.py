@@ -251,6 +251,12 @@ class Ledger:
                 enforceable=bool(cand.get("enforceable")),
                 first_seen=_now(),
             )
+            # Repo-scoped rules are delivered the moment they are written, so they are
+            # adopted by policy. Leaving them "proposed" hid them from rot tracking:
+            # a repo rule could be broken repeatedly and never show up in the report.
+            if rule.scope.startswith("repo:"):
+                rule.status = "adopted"
+                rule.adopted = rule.first_seen
             # The model may propose a scope; the gate overrides it upward only.
             gated = decide_scope(evidence, fallback_project="")
             if rule.scope == "global" and gated != "global":

@@ -16,6 +16,19 @@
     "python"
   ],
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/bin/inject.py"],
+            "timeout": 15,
+            "statusMessage": "claude-learn: loading this project's rules"
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
