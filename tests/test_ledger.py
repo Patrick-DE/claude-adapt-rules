@@ -83,6 +83,50 @@ def test_duplicate_of_adopted_rule_is_recorded_as_violation(tmp_path):
     assert ledger.rules[created.id].violation_count == 1
 
 
+def test_merge_moves_evidence_and_retires_the_duplicate(tmp_path):
+    ledger = Ledger(tmp_path / "ledger.json")
+    keeper = ledger.ingest(
+        [cand("Fix the root cause instead of stacking workarounds", [ev("alpha", "s1")])]
+    ).created[0]
+    dupe = ledger.ingest(
+        [cand("Keep it simple; avoid unnecessary complexity", [ev("beta", "s2")])]
+    ).created[0]
+
+    source, target = ledger.merge(dupe.id, keeper.id)
+    assert source.status == "retired"
+    assert source.evidence == []
+    assert {e.session for e in target.evidence} == {"s1", "s2"}
+    # Merged evidence spans two projects, so the gate now promotes the survivor.
+    assert target.scope == "global"
+
+
+def test_merge_rejects_unknown_or_self(tmp_path):
+    ledger = Ledger(tmp_path / "ledger.json")
+    rule = ledger.ingest([cand("do a thing", [ev("alpha", "s1")])]).created[0]
+    assert ledger.merge(rule.id, rule.id) is None
+    assert ledger.merge(rule.id, "R-9999") is None
+
+
+def test_near_duplicates_surface_below_the_merge_threshold(tmp_path):
+    """The real pair that slipped through: these two score 0.50, just under 0.6."""
+    global_text = (
+        "Fix the root cause and keep the solution as simple as the problem allows: no "
+        "workarounds stacked on workarounds, no clever code that is hard to audit."
+    )
+    repo_text = (
+        "Fix the root cause and keep the solution as simple as the problem allows; "
+        "avoid unnecessary complexity."
+    )
+    ledger = Ledger(tmp_path / "ledger.json")
+    first = ledger.ingest([cand(global_text, [ev("alpha", "s1")])]).created[0]
+    created = ledger.ingest([cand(repo_text, [ev("beta", "s2")])]).created
+    assert created, "0.50 is below the merge threshold, so a second rule is created"
+
+    matches = ledger.near_duplicates(created[0])
+    assert [other.id for _, other in matches] == [first.id]
+    assert 0.4 <= matches[0][0] < 0.6
+
+
 def test_candidate_without_evidence_rejected(tmp_path):
     ledger = Ledger(tmp_path / "ledger.json")
     result = ledger.ingest([{"rule": "no evidence here", "category": "style", "evidence": []}])

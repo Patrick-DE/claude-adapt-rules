@@ -20,7 +20,7 @@ from pathlib import Path
 
 from . import extract as extract_mod
 from . import render as render_mod
-from .ledger import Ledger
+from .ledger import Ledger, Rule
 from .signals import score_session, select
 from .transcripts import cutoff, iter_session_files, parse_all, projects_root
 
@@ -154,11 +154,92 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         print(f"  rejected: {why} :: {str(cand.get('rule'))[:70]}")
     for rule in result.created:
         print(f"  {rule.id} [{rule.scope}] {rule.rule[:80]}")
+    # Similar-but-not-identical rules are where duplicates hide: below the merge
+    # threshold nothing happens automatically, so surface them for a decision.
+    for rule in result.created:
+        for score, other in ledger.near_duplicates(rule)[:1]:
+            print(
+                f"  ? {rule.id} is {score:.0%} similar to {other.id} [{other.scope}] — "
+                f"consider `merge {rule.id} {other.id}`"
+            )
     print(f"\nwrote {len(written)} file(s); ledger: {ledger.path}")
     if result.violations:
         print("\nRules broken again after adoption — reword, hoist, or convert to a hook:")
         for rule in result.violations:
             print(f"  {rule.id} (x{rule.violation_count}) {rule.rule[:70]}")
+    return 0
+
+
+def cmd_reclassify(args: argparse.Namespace) -> int:
+    """Apply judged generality to existing rules.
+
+    Rules distilled before the `applies` field were scoped by evidence count alone, so
+    a universal practice stated once stayed local. Pass judgements as ID=universal or
+    ID=project; a universal claim naming something project-specific is still vetoed.
+    """
+    from .classify import resolve_applies
+    from .ledger import decide_scope
+
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    moves: list[tuple[Rule, str, str]] = []
+    for token in args.judgements:
+        rule_id, _, claimed = token.partition("=")
+        rule = ledger.rules.get(rule_id)
+        if rule is None:
+            print(f"unknown id: {rule_id}")
+            continue
+        applies, veto = resolve_applies(rule.rule, claimed, ledger.project_names())
+        if not applies:
+            print(f"  {rule_id}: '{claimed}' is not universal|project — skipped")
+            continue
+        if veto:
+            print(f"  {rule_id}: 'universal' vetoed — text names {veto}")
+        new_scope = decide_scope(rule.evidence, fallback_project="", applies=applies)
+        promoted = new_scope == "global" and rule.scope != new_scope
+        if new_scope != rule.scope:
+            moves.append((rule, rule.scope, new_scope))
+        rule.applies = applies
+        rule.scope = new_scope
+        # A rule *promoted* out of repo scope loses its automatic adoption, because
+        # global text needs an explicit yes. A rule that was already global and already
+        # adopted keeps its adoption — it is in CLAUDE.md, and un-adopting it here would
+        # leave the ledger disagreeing with the file.
+        if promoted and rule.status == "adopted" and not args.keep_adopted:
+            rule.status = "proposed"
+            rule.adopted = ""
+
+    if not args.apply:
+        print("\ndry run — nothing written. Re-run with --apply to keep these moves:")
+        for rule, old, new in moves:
+            print(f"  {rule.id} {old} -> {new}  {rule.rule[:60]}")
+        if not moves:
+            print("  no scope changes")
+        return 0
+
+    ledger.save()
+    render_mod.write_tier_files(ledger)
+    print(f"\napplied {len(moves)} scope change(s):")
+    for rule, old, new in moves:
+        print(f"  {rule.id} {old} -> {new}")
+    pending = [r for r in ledger.by_scope("global") if r.status == "proposed"]
+    if pending:
+        print(f"\n{len(pending)} global rule(s) now awaiting approval: "
+              f"{render_mod.summarize(pending)}")
+    return 0
+
+
+def cmd_merge(args: argparse.Namespace) -> int:
+    """Fold one rule's evidence into another and retire the duplicate."""
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    result = ledger.merge(args.source, args.target)
+    if result is None:
+        print(f"unknown or identical ids: {args.source}, {args.target}")
+        return 2
+    source, target = result
+    ledger.save()
+    render_mod.write_tier_files(ledger)
+    print(f"{source.id} retired; its evidence moved to {target.id} [{target.scope}]")
+    print(f"  {target.id} now cites {len(target.evidence)} quote(s) ({target.confidence})")
     return 0
 
 
@@ -432,6 +513,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("file")
     p_ingest.add_argument("--ledger")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_reclassify = sub.add_parser(
+        "reclassify", help="judge existing rules as universal or project-specific"
+    )
+    p_reclassify.add_argument("judgements", nargs="+", metavar="ID=universal|project")
+    p_reclassify.add_argument("--ledger")
+    p_reclassify.add_argument("--apply", action="store_true", help="write the changes")
+    p_reclassify.add_argument(
+        "--keep-adopted",
+        action="store_true",
+        help="do not reset a promoted rule to proposed (it is already in CLAUDE.md)",
+    )
+    p_reclassify.set_defaults(func=cmd_reclassify)
+
+    p_merge = sub.add_parser("merge", help="fold a duplicate rule into another")
+    p_merge.add_argument("source", help="rule to retire")
+    p_merge.add_argument("target", help="rule that keeps the evidence")
+    p_merge.add_argument("--ledger")
+    p_merge.set_defaults(func=cmd_merge)
 
     p_adopt = sub.add_parser("adopt", help="mark rules adopted")
     p_adopt.add_argument("ids", nargs="+")

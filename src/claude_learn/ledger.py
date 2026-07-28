@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .classify import PROJECT, UNIVERSAL, resolve_applies
 from .extract import rules_dir
 
 SCHEMA_VERSION = 1
@@ -85,6 +86,7 @@ class Rule:
     category: str
     scope: str  # "global" or "repo:<project-name>"
     evidence: list[Evidence] = field(default_factory=list)
+    applies: str = ""  # "universal" | "project" | "" (unjudged: count-gated)
     status: str = "proposed"
     enforceable: bool = False  # mechanically checkable -> belongs in a hook
     first_seen: str = ""
@@ -115,13 +117,26 @@ class Rule:
         return cls(**{**d, "evidence": evidence})
 
 
-def decide_scope(evidence: Sequence[Evidence], fallback_project: str = "") -> str:
-    """Apply the promotion gate: cross-project or repeated -> global."""
+def decide_scope(
+    evidence: Sequence[Evidence], fallback_project: str = "", applies: str = ""
+) -> str:
+    """Where the rule belongs.
+
+    ``applies`` is the judged generality and wins when present: a universal practice
+    belongs everywhere even if it was only ever said once, and a project-specific one
+    stays local no matter how often it was repeated. Without a judgement, fall back to
+    the evidence-count gate (cross-project or repeated).
+    """
     projects = {e.project for e in evidence if e.project}
     sessions = {e.session for e in evidence if e.session}
+    project = next(iter(projects), fallback_project) or "unknown"
+
+    if applies == UNIVERSAL:
+        return "global"
+    if applies == PROJECT:
+        return f"repo:{project}"
     if len(projects) >= GLOBAL_MIN_PROJECTS or len(sessions) >= GLOBAL_MIN_SESSIONS:
         return "global"
-    project = next(iter(projects), fallback_project) or "unknown"
     return f"repo:{project}"
 
 
@@ -131,6 +146,7 @@ class IngestResult:
     merged: list[tuple[Rule, str]] = field(default_factory=list)  # (rule, new quote)
     violations: list[Rule] = field(default_factory=list)
     rejected: list[tuple[dict, str]] = field(default_factory=list)  # (candidate, why)
+    vetoed: list[tuple[str, str]] = field(default_factory=list)  # (rule text, reason)
 
 
 class Ledger:
@@ -176,6 +192,14 @@ class Ledger:
 
     def scopes(self) -> list[str]:
         return sorted({r.scope for r in self.rules.values()})
+
+    def project_names(self) -> tuple[str, ...]:
+        """Known project names, used to veto 'universal' claims that name one."""
+        names = {
+            r.scope.split(":", 1)[1] for r in self.rules.values() if r.scope.startswith("repo:")
+        }
+        names.update(e.project for r in self.rules.values() for e in r.evidence if e.project)
+        return tuple(sorted(n for n in names if n))
 
     def find_similar(self, text: str, scope: str | None = None) -> Rule | None:
         best: tuple[float, Rule] | None = None
@@ -240,30 +264,67 @@ class Ledger:
                     result.merged.append((existing, text))
                 continue
 
+            applies, veto = resolve_applies(
+                text, str(cand.get("applies") or "") or None, self.project_names()
+            )
+            if veto:
+                result.vetoed.append((text, veto))
+
             rule = Rule(
                 id=self._mint_id(),
                 rule=text,
                 why=str(cand.get("why") or "").strip(),
                 category=category,
-                scope=str(cand.get("scope") or "")
-                or decide_scope(evidence, fallback_project=""),
+                scope=decide_scope(evidence, fallback_project="", applies=applies),
                 evidence=evidence,
+                applies=applies,
                 enforceable=bool(cand.get("enforceable")),
                 first_seen=_now(),
             )
             # Repo-scoped rules are delivered the moment they are written, so they are
             # adopted by policy. Leaving them "proposed" hid them from rot tracking:
             # a repo rule could be broken repeatedly and never show up in the report.
+            # Global rules always wait for an explicit yes.
             if rule.scope.startswith("repo:"):
                 rule.status = "adopted"
                 rule.adopted = rule.first_seen
-            # The model may propose a scope; the gate overrides it upward only.
-            gated = decide_scope(evidence, fallback_project="")
-            if rule.scope == "global" and gated != "global":
-                rule.scope = gated
             self.rules[rule.id] = rule
             result.created.append(rule)
         return result
+
+    def near_duplicates(
+        self, rule: Rule, floor: float = 0.4
+    ) -> list[tuple[float, Rule]]:
+        """Rules similar to ``rule`` but under DUPLICATE_THRESHOLD.
+
+        The gap between "similar enough to merge automatically" and "clearly distinct"
+        is where duplicates hide: a repo rule restating an adopted global one costs
+        context in every session and says the same thing twice.
+        """
+        matches = [
+            (score, other)
+            for other in self.rules.values()
+            if other.id != rule.id
+            and floor <= (score := _similarity(rule.rule, other.rule)) < DUPLICATE_THRESHOLD
+        ]
+        matches.sort(key=lambda pair: -pair[0])
+        return matches
+
+    def merge(self, source_id: str, target_id: str) -> tuple[Rule, Rule] | None:
+        """Move ``source``'s evidence onto ``target`` and retire the source."""
+        source = self.rules.get(source_id)
+        target = self.rules.get(target_id)
+        if source is None or target is None or source is target:
+            return None
+        known = {ev.uuid for ev in target.evidence}
+        target.evidence.extend(ev for ev in source.evidence if ev.uuid not in known)
+        # Widen the target's scope if the merged evidence now clears the gate.
+        gated = decide_scope(target.evidence, fallback_project="")
+        if gated == "global":
+            target.scope = gated
+        source.status = "retired"
+        source.evidence = []
+        return source, target
 
     def adopt(self, rule_id: str) -> Rule | None:
         rule = self.rules.get(rule_id)

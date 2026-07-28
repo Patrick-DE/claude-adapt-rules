@@ -65,6 +65,24 @@ Run the CLI from anywhere without installing the package:
 bin/claude-learn.sh status      # or bin\claude-learn.ps1 status on Windows
 ```
 
+### Using the skill without installing the plugin
+
+Plugin skills only load once the plugin is installed, and `.claude/skills/` only loads
+inside its own project. To get `/learn-rules` in every project from a plain checkout, link
+it into your user skills directory — no admin needed on Windows, and it stays a single
+source of truth:
+
+```bash
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\learn-rules" -Target "C:\path\to\claude-learn\skills\learn-rules"
+```
+
+```bash
+ln -s /path/to/claude-learn/skills/learn-rules ~/.claude/skills/learn-rules
+```
+
+Skills are enumerated at session start, so it appears in the next session. Remove the link
+if you later install the plugin, or the same skill loads twice.
+
 ## How rules reach a session
 
 Distilling rules is worthless if nothing reads them. Both tiers have a delivery path:
@@ -121,10 +139,29 @@ Structural signals are weighted higher because they're harder to fake:
 ranks "commit and push" alongside a real correction. It only adds a point when the words
 are corrective too.
 
-## Scope is computed, not chosen
+## Scope comes from generality, not from frequency
 
-`global` requires evidence in **≥2 projects or ≥3 sessions**. Otherwise the rule stays
-`repo:`. The model may propose a scope; the gate can only pull it down.
+Every rule is classified `applies: universal | project`. Universal means it would hold in
+a repo you have never seen — "never commit code that does not build" qualifies after being
+said **once**, which no evidence-count gate would ever promote. Project means it is tied
+to this codebase's tooling, architecture or vocabulary.
+
+A `universal` claim is vetoed when the rule text names a path, filename, identifier or
+known project name, and the reason is reported:
+
+```
+? R-0027 is universal but names a path (releases/canvas-debug.log) — scoped to repo
+```
+
+`project` is never widened. Unclassified rules fall back to the old count gate
+(≥2 projects or ≥3 sessions), which is only a proxy for generality.
+
+```bash
+claude-learn reclassify R-0024=universal R-0026=project --apply
+```
+
+Promotion out of repo scope drops the rule back to *proposed*: repo rules auto-apply,
+global rules never do.
 
 Worktree slugs (`...-app--claude-worktrees-brave-newton-a1b2c3`) collapse onto their
 repository — otherwise one repo's quirk looks like cross-project evidence and gets promoted.

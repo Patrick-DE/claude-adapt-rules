@@ -60,6 +60,7 @@ One candidate per distinct behaviour. Schema (`{"rules": [...]}`):
   "rule": "Test against the real frontend and backend; do not mock the system under test.",
   "why": "Mocks hid integration breakage the user then had to find by hand.",
   "category": "verification",
+  "applies": "universal",
   "enforceable": false,
   "evidence": [
     {"project": "my-app", "session": "193129bb", "ts": "2026-07-07",
@@ -92,12 +93,29 @@ Categories: `anti-pattern`, `expectation`, `style`, `process`, `verification`, `
 - Trim to the sentence carrying the signal, ≤25 words.
 - Attach every occurrence you found. Occurrence count drives scope and confidence.
 
-## Scope is computed, not chosen
+## Classify every rule: `applies`
 
-`ingest` applies the gate: evidence in **≥2 projects or ≥3 sessions** → `global`;
-otherwise `repo:<project>`. You may set `scope`, but the gate can only pull it *down*.
-So: gather all occurrences of a rule across bundles before filing it. Splitting the same
-rule per project keeps it repo-scoped forever.
+This is the judgement that decides scope, and it is yours to make:
+
+- `"universal"` — an engineering practice that holds in any codebase. "Never commit code
+  that does not build." Said once, in one project, and still true everywhere.
+- `"project"` — tied to this codebase's architecture, tooling, product decisions or
+  vocabulary. "Start the backend through `start_debug.bat`."
+
+Ask: *would this rule still make sense in a repo I have never seen?* If yes, it is
+universal. Do not use evidence count to decide — a universal rule stated once is still
+universal, and a local quirk repeated fifty times is still local.
+
+A `universal` claim is **vetoed** automatically when the rule text names a path, a
+filename, an identifier (`snake_case`, `camelCase`, `ALL_CAPS`) or a known project name;
+it becomes `project` and the reason is printed. If a rule is genuinely universal, say it
+in general terms — name the practice, not the file.
+
+`project` is never widened: narrow is the safe default.
+
+Omitting `applies` falls back to the old count gate (**≥2 projects or ≥3 sessions** →
+global), which is a frequency proxy for generality and gets one-off universal rules wrong.
+Always set it.
 
 Worktree slugs collapse onto their repository, so a worktree never fakes a second project.
 
