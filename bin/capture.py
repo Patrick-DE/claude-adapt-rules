@@ -28,7 +28,9 @@ def main() -> int:
         raw = sys.stdin.read()
         if not raw.strip():
             return 0
-        payload = json.loads(raw)
+        # PowerShell's pipeline prepends a UTF-8 BOM, which json.loads rejects with
+        # "Unexpected UTF-8 BOM". Observed in data/hook.log on Windows.
+        payload = json.loads(raw.lstrip("﻿"))
         transcript = payload.get("transcript_path")
         if not transcript:
             return 0

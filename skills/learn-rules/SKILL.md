@@ -12,14 +12,31 @@ Extraction and rule bookkeeping are deterministic Python. Your job is the one st
 that needs judgment: reading evidence and writing rules that are specific enough to
 change behaviour and general enough to reuse.
 
-## Pipeline
+## Running it
+
+Always invoke through the wrapper. `python -m claude_learn.cli` only resolves when the
+current directory is the checkout with `PYTHONPATH` set, which is never true when this
+skill runs from another project:
 
 ```bash
-python -m claude_learn.cli extract              # all history
-python -m claude_learn.cli extract --since 7 --max-events 40   # weekly run
+# Windows
+& "$env:CLAUDE_PLUGIN_ROOT\bin\claude-learn.ps1" extract
+# macOS / Linux
+"$CLAUDE_PLUGIN_ROOT/bin/claude-learn.sh" extract
 ```
 
-Outputs (under `data/`):
+Outside a plugin install, use the checkout's own `bin/claude-learn.ps1` or `.sh`. The
+examples below shorten this to `claude-learn`.
+
+```bash
+claude-learn extract           # rebuild the corpus and bundles from all history
+```
+
+Extraction always covers all history: the corpus file is rewritten in place, so a
+windowed run would replace the complete corpus with a slice. For incremental work use
+`pending` (see below), not a narrower extract.
+
+Outputs live under `~/.claude-learn/data/`:
 
 | Path | What it holds |
 | --- | --- |
@@ -27,11 +44,11 @@ Outputs (under `data/`):
 | `corpus/by-project/<slug>.md` | evidence bundles — read these |
 | `reports/extract.md` | counts, signal frequency, per-project totals |
 
-Then read each bundle, write candidates to `rules/candidates/<date>.json` (versioned —
-it is model output, not regenerable data), and apply them:
+Then read each bundle, write candidates to `~/.claude-learn/rules/candidates/<date>.json`,
+and apply them:
 
 ```bash
-python -m claude_learn.cli ingest rules/candidates/<date>.json
+claude-learn ingest ~/.claude-learn/rules/candidates/<date>.json
 ```
 
 ## Writing a rule
@@ -91,7 +108,7 @@ Worktree slugs collapse onto their repository, so a worktree never fakes a secon
   yourself.** Present the candidates and let the user pick; only then:
 
 ```bash
-python -m claude_learn.cli adopt R-0004 R-0009 --apply-global
+claude-learn adopt R-0004 R-0009 --apply-global
 ```
 
 That splices a marked block into `~/.claude/CLAUDE.md`, backs up the old file, and refuses
@@ -103,13 +120,13 @@ every project).
   a hook. Report them; do not silently re-add.
 
 ```bash
-python -m claude_learn.cli rot     # what to escalate, what to retire
+claude-learn rot     # what to escalate, what to retire
 ```
 
 ## Always archive after ingesting
 
 ```bash
-python -m claude_learn.cli archive
+claude-learn archive
 ```
 
 Claude Code deletes transcripts after 30 days by default. A rule outlives its transcript,
@@ -122,9 +139,9 @@ The `SessionEnd` hook accumulates events in `data/queue/queue.jsonl`. Distil fro
 pending slice, not the whole queue:
 
 ```bash
-python -m claude_learn.cli pending --bundle data/corpus/pending.md
+claude-learn pending --bundle ~/.claude-learn/data/corpus/pending.md
 # ... write candidates from that bundle, then ingest ...
-python -m claude_learn.cli consume --note rules/candidates/<date>.json
+claude-learn consume --note ~/.claude-learn/rules/candidates/<date>.json
 ```
 
 Without `consume`, every run re-reads every event ever captured.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from claude_learn import extract as extract_mod
 from claude_learn.cli import main
@@ -116,6 +117,32 @@ def _run_pending_again(out) -> str:
     with contextlib.redirect_stdout(buf):
         main(["consume", "--out", str(out)])
     return buf.getvalue()
+
+
+def test_hook_payload_with_a_bom_is_accepted(make_transcript, tmp_path, monkeypatch):
+    """PowerShell's pipeline prepends a BOM; json.loads rejects it.
+
+    Seen for real in data/hook.log on Windows: every capture through the .ps1 shim
+    failed with "Unexpected UTF-8 BOM" while the hook still reported success.
+    """
+    import io
+    import runpy
+    import sys
+
+    path = make_transcript([enqueue("no, that is wrong, never do it that way")])
+    out = tmp_path / "data"
+    monkeypatch.setenv("CLAUDE_LEARN_DATA_DIR", str(out))
+    payload = json.dumps({"transcript_path": str(path)})
+    monkeypatch.setattr(sys, "stdin", io.StringIO("﻿" + payload))
+
+    capture = Path(__file__).resolve().parents[1] / "bin" / "capture.py"
+    try:
+        runpy.run_path(str(capture), run_name="__main__")
+    except SystemExit as exit_code:
+        assert exit_code.code == 0
+
+    assert (out / "queue" / "queue.jsonl").exists()
+    assert not (out / "hook.log").exists()  # no failure was logged
 
 
 def test_queue_command_never_fails_the_session(tmp_path, capsys):

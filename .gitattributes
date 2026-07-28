@@ -1,0 +1,8 @@
+# Shell scripts must keep LF. Checked out with CRLF, bash reports
+# "bad interpreter: /usr/bin/env bash^M" and the hook silently does nothing.
+*.sh text eol=lf
+
+# PowerShell is fine either way; be explicit so the pair stays predictable.
+*.ps1 text eol=crlf
+
+* text=auto

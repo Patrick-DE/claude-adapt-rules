@@ -303,11 +303,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_status.add_argument("--top", type=int, default=10)
     p_status.set_defaults(func=cmd_status)
 
+    # No --since here on purpose: extract rewrites the corpus in place, so a windowed
+    # run replaces complete history with a slice. Use `pending` for incremental work.
     p_extract = sub.add_parser("extract", help="write corpus + per-project bundles")
-    common(p_extract)
-    p_extract.add_argument("--out", help="data dir (default <repo>/data)")
+    p_extract.add_argument("--root", help="transcript root (default ~/.claude/projects)")
+    p_extract.add_argument("--min-score", type=int, default=3)
+    p_extract.add_argument("--out", help="data dir (default ~/.claude-learn/data)")
     p_extract.add_argument("--max-events", type=int, default=extract_mod.MAX_EVENTS_PER_PROJECT)
-    p_extract.set_defaults(func=cmd_extract)
+    p_extract.set_defaults(func=cmd_extract, since=None)
 
     p_queue = sub.add_parser("queue", help="append one session's events to the queue")
     p_queue.add_argument("--transcript", required=True)

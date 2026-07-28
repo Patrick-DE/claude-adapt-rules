@@ -21,8 +21,8 @@
         "hooks": [
           {
             "type": "command",
-            "shell": "bash",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/capture.sh\"",
+            "command": "python",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/bin/capture.py"],
             "timeout": 20,
             "statusMessage": "claude-learn: capturing session"
           }
