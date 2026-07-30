@@ -23,8 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 def main() -> int:
     out = None
     try:
-        from claude_learn.extract import data_dir
-        from claude_learn.inject import session_start_payload
+        from claude_adapt_rules.extract import data_dir
+        from claude_adapt_rules.inject import session_start_payload
 
         out = data_dir()
         raw = sys.stdin.read()
@@ -37,7 +37,7 @@ def main() -> int:
             print(json.dumps(result, ensure_ascii=False))
     except Exception:  # noqa: BLE001 - deliberate, see contract above
         try:
-            target = out or Path.home() / ".claude-learn" / "data"
+            target = out or Path.home() / ".claude-adapt-rules" / "data"
             target.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
             with (target / "hook.log").open("a", encoding="utf-8") as fh:

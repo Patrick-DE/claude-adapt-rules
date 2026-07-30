@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from claude_learn.classify import PROJECT, UNIVERSAL, looks_project_specific, resolve_applies
-from claude_learn.ledger import Evidence, Ledger, decide_scope
+from claude_adapt_rules.classify import PROJECT, UNIVERSAL, looks_project_specific, resolve_applies
+from claude_adapt_rules.ledger import Evidence, Ledger, decide_scope
 
 
 def one(project: str = "alpha", session: str = "s1") -> list[Evidence]:
@@ -99,7 +99,7 @@ def test_ingest_reports_the_veto(tmp_path):
 
 def test_reclassify_keeps_an_already_global_adopted_rule_adopted(tmp_path, capsys):
     """Resetting those to 'proposed' left the ledger disagreeing with CLAUDE.md."""
-    from claude_learn.cli import main
+    from claude_adapt_rules.cli import main
 
     ledger_path = tmp_path / "ledger.json"
     ledger = Ledger(ledger_path)

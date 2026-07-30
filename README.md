@@ -1,4 +1,4 @@
-# claude-learn
+# claude-adapt-rules
 
 Mine your own Claude Code sessions for the moments you corrected the agent, distil
 those into rules, and land them where a future session will actually read them.
@@ -7,8 +7,8 @@ Two tiers, because the cost of a rule is not the same everywhere:
 
 | Tier | Target | Policy |
 | --- | --- | --- |
-| **repo** | `~/.claude-learn/rules/repos/<project>/rules.md` | auto-written; blast radius is one project, and it's a git diff away from gone |
-| **global** | `~/.claude-learn/rules/global/PROPOSED.md` → `~/.claude/CLAUDE.md` | proposed only, you approve; every line is loaded in every session of every project |
+| **repo** | `~/.claude-adapt-rules/rules/repos/<project>/rules.md` | auto-written; blast radius is one project, and it's a git diff away from gone |
+| **global** | `~/.claude-adapt-rules/rules/global/PROPOSED.md` → `~/.claude/CLAUDE.md` | proposed only, you approve; every line is loaded in every session of every project |
 
 ## Where the human text actually is
 
@@ -32,26 +32,26 @@ here, queue preferred, overlaps de-duplicated.
 As a Claude Code plugin, from a local checkout:
 
 ```bash
-claude plugin marketplace add /path/to/claude-learn
+claude plugin marketplace add /path/to/claude-adapt-rules
 ```
 
-Then enable `claude-learn`. That registers two hooks — `SessionStart` (inject this
-project's rules) and `SessionEnd` (capture corrections) — plus the `/learn-rules` skill.
+Then enable `claude-adapt-rules`. That registers two hooks — `SessionStart` (inject this
+project's rules) and `SessionEnd` (capture corrections) — plus the `/claude-adapt-rules` skill.
 Requires Python on PATH as `python`.
 
 | Platform | What loads | Notes |
 | --- | --- | --- |
 | Claude Code (Windows) | skill + both hooks | primary target; hooks exec `python` directly, no shell needed |
 | Claude Code (macOS/Linux) | skill + both hooks | change `command` to `python3` in `.claude-plugin/plugin.json` if `python` is absent |
-| Antigravity / Gemini | skill + `GEMINI.md` context | no session hooks — run `extract` on a schedule and read rules from `~/.claude-learn/` |
+| Antigravity / Gemini | skill + `GEMINI.md` context | no session hooks — run `extract` on a schedule and read rules from `~/.claude-adapt-rules/` |
 | Codex | skill + `AGENTS.md` context | same |
 
-**State lives in `~/.claude-learn/`** (`CLAUDE_LEARN_HOME` overrides), never inside the
+**State lives in `~/.claude-adapt-rules/`** (`CLAUDE_ADAPT_RULES_HOME` overrides), never inside the
 plugin directory — installed plugins live under a versioned cache path, so an update
 would orphan your ledger, queue and archive.
 
 ```
-~/.claude-learn/
+~/.claude-adapt-rules/
   rules/ledger.json          rule identity, evidence, adoption dates, violations
   rules/global/PROPOSED.md   awaiting your approval
   rules/repos/<project>/     auto-written per-project rules
@@ -62,22 +62,22 @@ would orphan your ledger, queue and archive.
 Run the CLI from anywhere without installing the package:
 
 ```bash
-bin/claude-learn.sh status      # or bin\claude-learn.ps1 status on Windows
+bin/claude-adapt-rules.sh status      # or bin\claude-adapt-rules.ps1 status on Windows
 ```
 
 ### Using the skill without installing the plugin
 
 Plugin skills only load once the plugin is installed, and `.claude/skills/` only loads
-inside its own project. To get `/learn-rules` in every project from a plain checkout, link
+inside its own project. To get `/claude-adapt-rules` in every project from a plain checkout, link
 it into your user skills directory — no admin needed on Windows, and it stays a single
 source of truth:
 
 ```bash
-New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\learn-rules" -Target "C:\path\to\claude-learn\skills\learn-rules"
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\claude-adapt-rules" -Target "C:\path\to\claude-adapt-rules\skills\claude-adapt-rules"
 ```
 
 ```bash
-ln -s /path/to/claude-learn/skills/learn-rules ~/.claude/skills/learn-rules
+ln -s /path/to/claude-adapt-rules/skills/claude-adapt-rules ~/.claude/skills/claude-adapt-rules
 ```
 
 Skills are enumerated at session start, so it appears in the next session. Remove the link
@@ -96,7 +96,7 @@ Sessions started inside a git worktree receive the parent repository's rules. Pr
 no rules get nothing — the hook prints nothing and exits 0.
 
 ```bash
-claude-learn doctor      # is any of this actually working?
+claude-adapt-rules doctor      # is any of this actually working?
 ```
 
 `doctor` exists because hooks fail open: a broken capture is silent by design. It reports
@@ -106,25 +106,25 @@ the cleanup age, and how many rules the current project would receive.
 ## Pipeline
 
 ```
-transcripts → signals → extract → /learn-rules → ledger → render
- (parse)      (score)   (bundles)  (the only      (identity,  (two tiers)
-                                    model step)    rot tracking)
+transcripts → signals → extract → /claude-adapt-rules → ledger → render
+ (parse)      (score)   (bundles)  (the only             (identity,  (two tiers)
+                                    model step)           rot tracking)
 ```
 
-Everything except `/learn-rules` is deterministic and **stdlib-only** — the SessionEnd
+Everything except `/claude-adapt-rules` is deterministic and **stdlib-only** — the SessionEnd
 hook imports this package on every session exit, so a dependency here would break
 unrelated work in other projects.
 
 ```bash
-python -m claude_learn.cli status                 # parse and report, write nothing
-python -m claude_learn.cli extract                # corpus + per-project bundles
-python -m claude_learn.cli ingest ~/.claude-learn/rules/candidates/<date>.json
-python -m claude_learn.cli verify                 # every quote must be verbatim
-python -m claude_learn.cli adopt R-0001 --apply-global
-python -m claude_learn.cli rot                    # which rules aren't working
+python -m claude_adapt_rules.cli status                 # parse and report, write nothing
+python -m claude_adapt_rules.cli extract                # corpus + per-project bundles
+python -m claude_adapt_rules.cli ingest ~/.claude-adapt-rules/rules/candidates/<date>.json
+python -m claude_adapt_rules.cli verify                 # every quote must be verbatim
+python -m claude_adapt_rules.cli adopt R-0001 --apply-global
+python -m claude_adapt_rules.cli rot                    # which rules aren't working
 ```
 
-Then in Claude Code: `/learn-rules` reads the bundles and writes the candidates file.
+Then in Claude Code: `/claude-adapt-rules` reads the bundles and writes the candidates file.
 
 ## What makes an event worth reading
 
@@ -157,7 +157,7 @@ known project name, and the reason is reported:
 (≥2 projects or ≥3 sessions), which is only a proxy for generality.
 
 ```bash
-claude-learn reclassify R-0024=universal R-0026=project --apply
+claude-adapt-rules reclassify R-0024=universal R-0026=project --apply
 ```
 
 Promotion out of repo scope drops the rule back to *proposed*: repo rules auto-apply,
@@ -193,8 +193,8 @@ Claude Code deletes transcripts after `cleanupPeriodDays` (**default 30**). Meas
 evidence quotes from rules distilled that same morning already cited deleted sessions.
 
 ```bash
-python -m claude_learn.cli archive        # cited sessions only
-python -m claude_learn.cli archive --all  # every session, before it ages out
+python -m claude_adapt_rules.cli archive        # cited sessions only
+python -m claude_adapt_rules.cli archive --all  # every session, before it ages out
 ```
 
 The weekly job archives after every extract. `verify` reads the archive too, and reports a
@@ -212,7 +212,7 @@ To keep raw history longer, raise retention in `~/.claude/settings.json`:
 - **SessionStart hook** (`bin/inject.py`) — puts the current project's rules into context.
 - **SessionEnd hook** (`bin/capture.py`, or `bin/capture.sh` / `bin/capture.ps1` as shims)
   appends each finished session's candidates to
-  `~/.claude-learn/data/queue/queue.jsonl`. No model, no network, always exits 0.
+  `~/.claude-adapt-rules/data/queue/queue.jsonl`. No model, no network, always exits 0.
 
 Both are declared by the plugin and exec `python` directly, so neither needs a shell — on
 Windows that removes the Git Bash dependency. Where only `python3` exists, change the
@@ -221,28 +221,28 @@ Windows that removes the Git Bash dependency. Where only `python3` exists, chang
   `hooks/weekly_extract.sh` (cron). Both re-extract full history and then archive.
 
 ```bash
-schtasks /Create /TN "claude-learn weekly" /SC WEEKLY /D MON /ST 09:00 /TR "powershell -NoProfile -ExecutionPolicy Bypass -File C:\path\to\claude-learn\hooks\weekly_extract.ps1"
+schtasks /Create /TN "claude-adapt-rules weekly" /SC WEEKLY /D MON /ST 09:00 /TR "powershell -NoProfile -ExecutionPolicy Bypass -File C:\path\to\claude-adapt-rules\hooks\weekly_extract.ps1"
 ```
 
 ```bash
-0 9 * * 1 /path/to/claude-learn/hooks/weekly_extract.sh
+0 9 * * 1 /path/to/claude-adapt-rules/hooks/weekly_extract.sh
 ```
 
-The distil step stays manual: it needs a model. Run `/learn-rules` when the bundles look
+The distil step stays manual: it needs a model. Run `/claude-adapt-rules` when the bundles look
 worth reading.
 
 ## Layout
 
 ```
-src/claude_learn/       transcripts, signals, extract, ledger, render, verify, archive, inject, cli
-skills/learn-rules/     the model-facing distillation instructions
-bin/                    hook entry points (capture, inject) + claude-learn CLI wrappers
-hooks/                  weekly extract for Task Scheduler (.ps1) and cron (.sh)
-.claude-plugin/         Claude Code plugin + marketplace manifests
-.codex-plugin/          Codex manifest; AGENTS.md is its context file
-gemini-extension.json   Antigravity / Gemini manifest; GEMINI.md is its context file
-tests/                  66 tests, run with `python -m pytest`
+src/claude_adapt_rules/       transcripts, signals, extract, ledger, render, verify, archive, inject, cli
+skills/claude-adapt-rules/    the model-facing distillation instructions
+bin/                          hook entry points (capture, inject) + claude-adapt-rules CLI wrappers
+hooks/                        weekly extract for Task Scheduler (.ps1) and cron (.sh)
+.claude-plugin/               Claude Code plugin + marketplace manifests
+.codex-plugin/                Codex manifest; AGENTS.md is its context file
+gemini-extension.json         Antigravity / Gemini manifest; GEMINI.md is its context file
+tests/                        suite run with `python -m pytest`
 ```
 
 No rules ship with the plugin — the ledger starts empty and everything you distil stays
-in `~/.claude-learn/`.
+in `~/.claude-adapt-rules/`.

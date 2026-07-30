@@ -1,4 +1,4 @@
-"""claude-learn: mine Claude Code sessions for corrections, distil them into rules.
+"""claude-adapt-rules: mine Claude Code sessions for corrections, distil them into rules.
 
 Pipeline:
 

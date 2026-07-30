@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from claude_learn import archive as archive_mod
-from claude_learn.ledger import Ledger
-from claude_learn.verify import verify_ledger
+from claude_adapt_rules import archive as archive_mod
+from claude_adapt_rules.ledger import Ledger
+from claude_adapt_rules.verify import verify_ledger
 
 from .conftest import enqueue
 

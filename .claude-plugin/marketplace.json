@@ -1,13 +1,13 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "claude-learn",
+  "name": "claude-adapt-rules",
   "description": "Turn the corrections you keep repeating into rules your agent already knows.",
   "owner": {
     "name": "Patrick Eisenschmidt"
   },
   "plugins": [
     {
-      "name": "claude-learn",
+      "name": "claude-adapt-rules",
       "description": "Mine past sessions for corrections; distil them into per-repo and global rules with verifiable evidence.",
       "source": "./",
       "category": "productivity"

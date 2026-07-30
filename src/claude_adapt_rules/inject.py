@@ -41,7 +41,7 @@ def rules_for_project(project: str, ledger: Ledger) -> list[Rule]:
 
 def _render(project: str, rules: list[Rule], include_why: bool) -> str:
     lines = [
-        f"# Learned rules for {project} (claude-learn)",
+        f"# Learned rules for {project} (claude-adapt-rules)",
         "",
         "Distilled from corrections the user already gave in this repository. Follow them",
         "as you would the project's own instructions; if one looks wrong, say so instead of",
@@ -84,7 +84,7 @@ def build(cwd: str, ledger: Ledger | None = None) -> Injection | None:
     if truncated:
         text += (
             f"\n{truncated} further rule(s) omitted; see "
-            f"~/.claude-learn/rules/repos/{project}/rules.md\n"
+            f"~/.claude-adapt-rules/rules/repos/{project}/rules.md\n"
         )
     return Injection(project=project, rules=kept, text=text, truncated=truncated)
 

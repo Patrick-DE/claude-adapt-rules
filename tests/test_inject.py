@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from claude_learn import inject
-from claude_learn.ledger import Ledger
+from claude_adapt_rules import inject
+from claude_adapt_rules.ledger import Ledger
 
 
 def cand(rule: str, project: str, category: str = "expectation", why: str = "because") -> dict:

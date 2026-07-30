@@ -170,7 +170,7 @@ class Session:
 
 def projects_root() -> Path:
     """Transcript root. Overridable for tests and for non-default installs."""
-    if env := os.environ.get("CLAUDE_LEARN_PROJECTS_ROOT"):
+    if env := os.environ.get("CLAUDE_ADAPT_RULES_PROJECTS_ROOT"):
         return Path(env)
     if env := os.environ.get("CLAUDE_CONFIG_DIR"):
         return Path(env) / "projects"

@@ -1,6 +1,6 @@
 ---
-name: learn-rules
-description: Use when asked to learn from past sessions, distil corrections into rules, update CLAUDE.md from session history, or run the claude-learn pipeline. Mines Claude Code transcripts for moments the user corrected the agent and turns them into scoped, evidence-backed rules.
+name: adapt-rules
+description: Use when asked to learn from past sessions, distil corrections into rules, update CLAUDE.md from session history, or run the claude-adapt-rules pipeline. Mines Claude Code transcripts for moments the user corrected the agent and turns them into scoped, evidence-backed rules.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -14,29 +14,29 @@ change behaviour and general enough to reuse.
 
 ## Running it
 
-Always invoke through the wrapper. `python -m claude_learn.cli` only resolves when the
+Always invoke through the wrapper. `python -m claude_adapt_rules.cli` only resolves when the
 current directory is the checkout with `PYTHONPATH` set, which is never true when this
 skill runs from another project:
 
 ```bash
 # Windows
-& "$env:CLAUDE_PLUGIN_ROOT\bin\claude-learn.ps1" extract
+& "$env:CLAUDE_PLUGIN_ROOT\bin\claude-adapt-rules.ps1" extract
 # macOS / Linux
-"$CLAUDE_PLUGIN_ROOT/bin/claude-learn.sh" extract
+"$CLAUDE_PLUGIN_ROOT/bin/claude-adapt-rules.sh" extract
 ```
 
-Outside a plugin install, use the checkout's own `bin/claude-learn.ps1` or `.sh`. The
-examples below shorten this to `claude-learn`.
+Outside a plugin install, use the checkout's own `bin/claude-adapt-rules.ps1` or `.sh`. The
+examples below shorten this to `claude-adapt-rules`.
 
 ```bash
-claude-learn extract           # rebuild the corpus and bundles from all history
+claude-adapt-rules extract           # rebuild the corpus and bundles from all history
 ```
 
 Extraction always covers all history: the corpus file is rewritten in place, so a
 windowed run would replace the complete corpus with a slice. For incremental work use
 `pending` (see below), not a narrower extract.
 
-Outputs live under `~/.claude-learn/data/`:
+Outputs live under `~/.claude-adapt-rules/data/`:
 
 | Path | What it holds |
 | --- | --- |
@@ -44,11 +44,11 @@ Outputs live under `~/.claude-learn/data/`:
 | `corpus/by-project/<slug>.md` | evidence bundles — read these |
 | `reports/extract.md` | counts, signal frequency, per-project totals |
 
-Then read each bundle, write candidates to `~/.claude-learn/rules/candidates/<date>.json`,
+Then read each bundle, write candidates to `~/.claude-adapt-rules/rules/candidates/<date>.json`,
 and apply them:
 
 ```bash
-claude-learn ingest ~/.claude-learn/rules/candidates/<date>.json
+claude-adapt-rules ingest ~/.claude-adapt-rules/rules/candidates/<date>.json
 ```
 
 ## Writing a rule
@@ -126,7 +126,7 @@ Worktree slugs collapse onto their repository, so a worktree never fakes a secon
   yourself.** Present the candidates and let the user pick; only then:
 
 ```bash
-claude-learn adopt R-0004 R-0009 --apply-global
+claude-adapt-rules adopt R-0004 R-0009 --apply-global
 ```
 
 That splices a marked block into `~/.claude/CLAUDE.md`, backs up the old file, and refuses
@@ -138,13 +138,13 @@ every project).
   a hook. Report them; do not silently re-add.
 
 ```bash
-claude-learn rot     # what to escalate, what to retire
+claude-adapt-rules rot     # what to escalate, what to retire
 ```
 
 ## Always archive after ingesting
 
 ```bash
-claude-learn archive
+claude-adapt-rules archive
 ```
 
 Claude Code deletes transcripts after 30 days by default. A rule outlives its transcript,
@@ -157,9 +157,9 @@ The `SessionEnd` hook accumulates events in `data/queue/queue.jsonl`. Distil fro
 pending slice, not the whole queue:
 
 ```bash
-claude-learn pending --bundle ~/.claude-learn/data/corpus/pending.md
+claude-adapt-rules pending --bundle ~/.claude-adapt-rules/data/corpus/pending.md
 # ... write candidates from that bundle, then ingest ...
-claude-learn consume --note ~/.claude-learn/rules/candidates/<date>.json
+claude-adapt-rules consume --note ~/.claude-adapt-rules/rules/candidates/<date>.json
 ```
 
 Without `consume`, every run re-reads every event ever captured.

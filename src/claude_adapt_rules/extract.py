@@ -28,7 +28,7 @@ MAX_CONTEXT_CHARS = 600
 def repo_root() -> Path:
     """The installation directory. NOT a place to keep state.
 
-    When claude-learn runs as a plugin this is
+    When claude-adapt-rules runs as a plugin this is
     ``~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`` — a new version
     means a new directory, so anything stored here is orphaned on every update.
     """
@@ -37,19 +37,19 @@ def repo_root() -> Path:
 
 def home_dir() -> Path:
     """Where state lives: ledger, corpus, queue, archive. Survives updates."""
-    if env := os.environ.get("CLAUDE_LEARN_HOME"):
+    if env := os.environ.get("CLAUDE_ADAPT_RULES_HOME"):
         return Path(env)
-    return Path.home() / ".claude-learn"
+    return Path.home() / ".claude-adapt-rules"
 
 
 def data_dir() -> Path:
-    if env := os.environ.get("CLAUDE_LEARN_DATA_DIR"):
+    if env := os.environ.get("CLAUDE_ADAPT_RULES_DATA_DIR"):
         return Path(env)
     return home_dir() / "data"
 
 
 def rules_dir() -> Path:
-    if env := os.environ.get("CLAUDE_LEARN_RULES_DIR"):
+    if env := os.environ.get("CLAUDE_ADAPT_RULES_RULES_DIR"):
         return Path(env)
     return home_dir() / "rules"
 
@@ -393,7 +393,7 @@ def render_pending_bundle(records: Sequence[dict]) -> str:
         f"- events awaiting distillation: {len(records)}",
         "",
         "Quote verbatim from `User said`. After filing candidates, run",
-        "`python -m claude_learn.cli consume` so these are not re-read next time.",
+        "`python -m claude_adapt_rules.cli consume` so these are not re-read next time.",
         "",
     ]
     for i, rec in enumerate(records, start=1):

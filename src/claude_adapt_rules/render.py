@@ -17,8 +17,8 @@ from pathlib import Path
 from .extract import rules_dir
 from .ledger import Ledger, Rule
 
-BEGIN_MARKER = "<!-- claude-learn:begin -->"
-END_MARKER = "<!-- claude-learn:end -->"
+BEGIN_MARKER = "<!-- claude-adapt-rules:begin -->"
+END_MARKER = "<!-- claude-adapt-rules:end -->"
 
 # Soft cap on the always-on global block. Above this, rules belong in a memory
 # file (recall on demand) or a skill rather than in every prompt.
@@ -50,8 +50,8 @@ def render_proposed_global(ledger: Ledger) -> str:
         "Candidates that cleared the promotion gate (evidence in ≥2 projects or",
         "≥3 sessions). Nothing here is active yet.",
         "",
-        "Accept:  `python -m claude_learn.cli adopt R-0001 R-0007 --apply-global`",
-        "Reject:  `python -m claude_learn.cli retire R-0002`",
+        "Accept:  `python -m claude_adapt_rules.cli adopt R-0001 R-0007 --apply-global`",
+        "Reject:  `python -m claude_adapt_rules.cli retire R-0002`",
         "",
     ]
     if not rules:
@@ -81,7 +81,7 @@ def render_repo_rules(ledger: Ledger, scope: str) -> str:
     lines = [
         f"# Learned rules: {project}",
         "",
-        "Distilled from this project's own sessions by `claude-learn`. Auto-written —",
+        "Distilled from this project's own sessions by `claude-adapt-rules`. Auto-written —",
         "edit the ledger (`rules/ledger.json`) or retire a rule rather than hand-editing.",
         "",
     ]
@@ -107,7 +107,7 @@ def render_global_block(ledger: Ledger) -> str:
     """The block that gets spliced into ``~/.claude/CLAUDE.md``."""
     rules = [r for r in ledger.by_scope("global") if r.status == "adopted"]
     rules.sort(key=lambda r: (r.category, r.id))
-    lines = [BEGIN_MARKER, "", "# Learned rules (claude-learn)", ""]
+    lines = [BEGIN_MARKER, "", "# Learned rules (claude-adapt-rules)", ""]
     by_category: dict[str, list[Rule]] = {}
     for rule in rules:
         by_category.setdefault(rule.category, []).append(rule)

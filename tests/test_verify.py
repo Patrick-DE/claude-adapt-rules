@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from claude_learn.ledger import Ledger
-from claude_learn.verify import quote_fragments, verify_ledger
+from claude_adapt_rules.ledger import Ledger
+from claude_adapt_rules.verify import quote_fragments, verify_ledger
 
 from .conftest import enqueue
 

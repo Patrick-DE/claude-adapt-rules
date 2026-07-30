@@ -1,11 +1,11 @@
 """Command line entry point.
 
-    python -m claude_learn.cli status              # what's in the transcripts
-    python -m claude_learn.cli extract             # build corpus + bundles
-    python -m claude_learn.cli queue --transcript  # SessionEnd hook target
-    python -m claude_learn.cli ingest cands.json   # apply distilled candidates
-    python -m claude_learn.cli adopt R-0001 --apply-global
-    python -m claude_learn.cli rot                 # which rules aren't working
+    python -m claude_adapt_rules.cli status              # what's in the transcripts
+    python -m claude_adapt_rules.cli extract             # build corpus + bundles
+    python -m claude_adapt_rules.cli queue --transcript  # SessionEnd hook target
+    python -m claude_adapt_rules.cli ingest cands.json   # apply distilled candidates
+    python -m claude_adapt_rules.cli adopt R-0001 --apply-global
+    python -m claude_adapt_rules.cli rot                 # which rules aren't working
 """
 
 from __future__ import annotations
@@ -268,7 +268,7 @@ def cmd_adopt(args: argparse.Namespace) -> int:
         )
         return 1
     if target.exists():
-        backup = target.with_suffix(target.suffix + ".claude-learn.bak")
+        backup = target.with_suffix(target.suffix + ".claude-adapt-rules.bak")
         shutil.copy2(target, backup)
         print(f"backup: {backup}")
     target.write_text(render_mod.splice_block(existing, block), encoding="utf-8")
@@ -470,7 +470,7 @@ def cmd_session(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="claude-learn", description=__doc__)
+    parser = argparse.ArgumentParser(prog="claude-adapt-rules", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
     def common(p: argparse.ArgumentParser) -> None:
@@ -488,7 +488,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_extract = sub.add_parser("extract", help="write corpus + per-project bundles")
     p_extract.add_argument("--root", help="transcript root (default ~/.claude/projects)")
     p_extract.add_argument("--min-score", type=int, default=3)
-    p_extract.add_argument("--out", help="data dir (default ~/.claude-learn/data)")
+    p_extract.add_argument("--out", help="data dir (default ~/.claude-adapt-rules/data)")
     p_extract.add_argument("--max-events", type=int, default=extract_mod.MAX_EVENTS_PER_PROJECT)
     p_extract.set_defaults(func=cmd_extract, since=None)
 

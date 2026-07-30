@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from claude_learn.ledger import (
+from claude_adapt_rules.ledger import (
     Evidence,
     Ledger,
     decide_scope,
 )
-from claude_learn.render import (
+from claude_adapt_rules.render import (
     BEGIN_MARKER,
     END_MARKER,
     render_global_block,

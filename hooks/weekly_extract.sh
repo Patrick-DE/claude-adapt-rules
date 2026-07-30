@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Weekly deterministic pass for claude-learn (macOS/Linux twin of weekly_extract.ps1).
+# Weekly deterministic pass for claude-adapt-rules (macOS/Linux twin of weekly_extract.ps1).
 #
 # Re-extracts ALL history, then archives every cited transcript. Full history, not a
 # window: extract overwrites the corpus, so a windowed run would replace the complete
 # corpus with a slice. Archiving matters because Claude Code deletes transcripts after
 # cleanupPeriodDays (default 30) and rules outlive their evidence.
 #
-# Does NOT distil rules — that needs a model. Run /learn-rules afterwards.
+# Does NOT distil rules — that needs a model. Run /claude-adapt-rules afterwards.
 #
 # Install with cron, Mondays at 09:00:
-#   0 9 * * 1 /path/to/claude-learn/hooks/weekly_extract.sh
+#   0 9 * * 1 /path/to/claude-adapt-rules/hooks/weekly_extract.sh
 set -u
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(dirname "$here")"
-home_dir="${CLAUDE_LEARN_HOME:-$HOME/.claude-learn}"
+home_dir="${CLAUDE_ADAPT_RULES_HOME:-$HOME/.claude-adapt-rules}"
 log="$home_dir/data/reports/weekly.log"
 mkdir -p "$(dirname "$log")"
 
@@ -37,9 +37,9 @@ export PYTHONPATH="$repo/src${PYTHONPATH:+:$PYTHONPATH}"
 
 {
     echo "[$stamp] extract (full history)"
-    "$python_bin" -m claude_learn.cli extract 2>&1 || true
-    "$python_bin" -m claude_learn.cli archive 2>&1 || true
-    echo "[$stamp] next step: run /learn-rules to distil the refreshed bundles"
+    "$python_bin" -m claude_adapt_rules.cli extract 2>&1 || true
+    "$python_bin" -m claude_adapt_rules.cli archive 2>&1 || true
+    echo "[$stamp] next step: run /claude-adapt-rules to distil the refreshed bundles"
 } >>"$log"
 
 exit 0

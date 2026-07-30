@@ -1,8 +1,8 @@
-﻿"""What counts as a human prompt, and what must never count as one."""
+"""What counts as a human prompt, and what must never count as one."""
 
 from __future__ import annotations
 
-from claude_learn.transcripts import (
+from claude_adapt_rules.transcripts import (
     canonical_project,
     friendly_project_name,
     is_machine_prompt,

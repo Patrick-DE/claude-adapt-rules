@@ -1,5 +1,5 @@
 {
-  "name": "claude-learn",
+  "name": "claude-adapt-rules",
   "version": "0.1.0",
   "description": "Mines your Claude Code sessions for the corrections you had to repeat, then distils them into evidence-backed rules — per-repo automatically, global only with your approval.",
   "author": {
@@ -24,7 +24,7 @@
             "command": "python",
             "args": ["${CLAUDE_PLUGIN_ROOT}/bin/inject.py"],
             "timeout": 15,
-            "statusMessage": "claude-learn: loading this project's rules"
+            "statusMessage": "claude-adapt-rules: loading this project's rules"
           }
         ]
       }
@@ -37,7 +37,7 @@
             "command": "python",
             "args": ["${CLAUDE_PLUGIN_ROOT}/bin/capture.py"],
             "timeout": 20,
-            "statusMessage": "claude-learn: capturing session"
+            "statusMessage": "claude-adapt-rules: capturing session"
           }
         ]
       }

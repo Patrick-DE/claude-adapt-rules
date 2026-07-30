@@ -362,6 +362,6 @@ class Ledger:
 
 def default_ledger_path() -> Path:
     """User state, never the install directory — see extract.repo_root."""
-    if env := os.environ.get("CLAUDE_LEARN_LEDGER"):
+    if env := os.environ.get("CLAUDE_ADAPT_RULES_LEDGER"):
         return Path(env)
     return rules_dir() / "ledger.json"

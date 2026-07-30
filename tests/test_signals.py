@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from claude_learn.signals import is_acknowledgement, score_prompt, score_session, select
-from claude_learn.transcripts import parse_session
+from claude_adapt_rules.signals import is_acknowledgement, score_prompt, score_session, select
+from claude_adapt_rules.transcripts import parse_session
 
 from .conftest import DENIAL, assistant, enqueue, tool_result
 
@@ -66,7 +66,7 @@ def test_repeated_instruction_detected(make_transcript):
 
 
 def test_german_negation_scores():
-    from claude_learn.transcripts import Prompt
+    from claude_adapt_rules.transcripts import Prompt
 
     prompt = Prompt(
         project="p",

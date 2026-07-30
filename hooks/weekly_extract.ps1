@@ -1,11 +1,11 @@
-# Weekly deterministic pass for claude-learn, run by Windows Task Scheduler.
+# Weekly deterministic pass for claude-adapt-rules, run by Windows Task Scheduler.
 #
 # Re-extracts ALL history and refreshes the evidence bundles and report. Full
 # history, not a --since window: extract overwrites the corpus, so a windowed run
 # would silently replace the complete corpus with a two-week slice. Parsing every
 # transcript takes seconds, so there is nothing to save by narrowing it.
 #
-# It does NOT distil rules: that needs a model. Run /learn-rules in Claude Code
+# It does NOT distil rules: that needs a model. Run /claude-adapt-rules in Claude Code
 # afterwards to turn the refreshed bundles into rule candidates.
 #
 # Exit code is always 0 — a scheduled job that reports failure every week gets
@@ -28,15 +28,15 @@ try {
     }
 
     $env:PYTHONPATH = Join-Path $repo 'src'
-    $output = & $python -m claude_learn.cli extract 2>&1
+    $output = & $python -m claude_adapt_rules.cli extract 2>&1
     Add-Content -Path $log -Value "[$stamp] extract (full history)"
     Add-Content -Path $log -Value ($output | Out-String).TrimEnd()
 
     # Claude Code deletes transcripts after cleanupPeriodDays (default 30). Archive
     # every cited session right after extraction, or rules outlive their evidence.
-    $archived = & $python -m claude_learn.cli archive 2>&1
+    $archived = & $python -m claude_adapt_rules.cli archive 2>&1
     Add-Content -Path $log -Value ($archived | Out-String).TrimEnd()
-    Add-Content -Path $log -Value "[$stamp] next step: run /learn-rules to distil the refreshed bundles"
+    Add-Content -Path $log -Value "[$stamp] next step: run /claude-adapt-rules to distil the refreshed bundles"
 }
 catch {
     Add-Content -Path $log -Value "[$stamp] failed: $($_.Exception.Message)"

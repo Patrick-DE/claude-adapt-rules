@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from claude_learn import extract as extract_mod
-from claude_learn.cli import main
+from claude_adapt_rules import extract as extract_mod
+from claude_adapt_rules.cli import main
 
 from .conftest import assistant, enqueue
 
@@ -131,7 +131,7 @@ def test_hook_payload_with_a_bom_is_accepted(make_transcript, tmp_path, monkeypa
 
     path = make_transcript([enqueue("no, that is wrong, never do it that way")])
     out = tmp_path / "data"
-    monkeypatch.setenv("CLAUDE_LEARN_DATA_DIR", str(out))
+    monkeypatch.setenv("CLAUDE_ADAPT_RULES_DATA_DIR", str(out))
     payload = json.dumps({"transcript_path": str(path)})
     monkeypatch.setattr(sys, "stdin", io.StringIO("﻿" + payload))
 
@@ -201,4 +201,4 @@ def test_ingest_and_adopt_roundtrip_via_cli(tmp_path, capsys):
     merged = target.read_text(encoding="utf-8")
     assert "existing content" in merged
     assert "R-0001" in merged
-    assert (tmp_path / "CLAUDE.md.claude-learn.bak").exists()
+    assert (tmp_path / "CLAUDE.md.claude-adapt-rules.bak").exists()
