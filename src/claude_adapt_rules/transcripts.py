@@ -81,6 +81,11 @@ _MACHINE_PROMPT_RES: tuple[re.Pattern[str], ...] = (
     re.compile(r"^This session is being continued from a previous conversation"),
     re.compile(r"^Base directory for this skill:"),
     re.compile(r"^(?:Stop|SessionStart|PreToolUse|PostToolUse|SessionEnd)\s+hook"),
+    # A goal/Stop hook re-announces its condition on the human channel on every
+    # turn it blocks, so one goal yields one near-identical "prompt" per turn.
+    # Six such copies scored 10 and outranked every real correction in the
+    # 2026-08-04 slice; being near-identical they also earn repeated_instruction.
+    re.compile(r"^A session-scoped \w+ hook is now active"),
     re.compile(r"^Caveat: The messages below were generated"),
     re.compile(r"^\s*<(?:task-notification|local-command|command-)"),
     re.compile(r"^Your task is to create a detailed summary of the conversation"),
@@ -97,6 +102,14 @@ _SLASH_COMMAND_RE = re.compile(r"^/[A-Za-z0-9][\w.:-]*\s*")
 # When a slash command carries arguments, the injected body ends with the user's
 # own words after this marker. That text is the only human part of the message.
 _ARGUMENTS_RE = re.compile(r"^ARGUMENTS:\s*(.*)$", re.MULTILINE | re.DOTALL)
+
+# What is left once a slash command's own name, or the skill body it injected,
+# is removed. A single bare token is the command's mode selector or a path --
+# "/caveman full" and a 4.6 kB SKILL.md ending "ARGUMENTS: full" both reduce to
+# "full" -- which states no preference and can never be quoted as evidence.
+# Deliberately applied to a command residue only: a one-word prompt the user
+# typed on its own is still a prompt.
+_BARE_ARGUMENT_RE = re.compile(r"^[\w./:@\\-]{1,40}$")
 
 # Exact strings, taken from real transcripts.
 _USER_DENIAL_RE = re.compile(
@@ -284,14 +297,19 @@ def clean_prompt_text(text: str) -> str:
         return ""
     # A slash command with arguments: everything before ARGUMENTS: is injected
     # skill text, everything after it is what the user actually typed.
+    from_command = False
     if (m := _ARGUMENTS_RE.search(text)) and m.group(1).strip():
         text = m.group(1).strip()
+        from_command = True
     if is_machine_prompt(text):
         return ""
     # Bare `/command` carries no preference; `/command do the thing` does.
     stripped = _SLASH_COMMAND_RE.sub("", text, count=1).strip()
     if stripped != text:
         text = stripped
+        from_command = True
+    if from_command and is_bare_command_argument(text):
+        return ""
     return text
 
 
@@ -299,6 +317,11 @@ def is_machine_prompt(text: str) -> bool:
     """True for text the harness wrote on the human channel."""
     stripped = text.lstrip()
     return any(pattern.match(stripped) for pattern in _MACHINE_PROMPT_RES)
+
+
+def is_bare_command_argument(text: str) -> bool:
+    """True when a slash-command residue is one bare token, not a request."""
+    return bool(_BARE_ARGUMENT_RE.match(text.strip()))
 
 
 def _dedup_head(text: str) -> str:

@@ -88,6 +88,47 @@ def test_bare_slash_command_dropped_but_trailing_request_kept(make_transcript):
     assert texts(parse_session(path)) == ["never inline styles here"]
 
 
+STOP_HOOK_INJECTION = (
+    'A session-scoped Stop hook is now active with condition: "finish the full '
+    'implementation then we do the live verification". Briefly acknowledge the goal, '
+    "then immediately start (or continue) working toward it — treat the condition "
+    "itself as your directive and do not pause to ask the user what to do. The hook "
+    "will block stopping until the condition holds."
+)
+
+
+def test_goal_stop_hook_announcement_is_not_a_prompt(make_transcript):
+    """Verbatim from the 2026-08-04 slice: it re-announces on every blocked turn.
+
+    Six copies scored 10 apiece and outranked every genuine correction, and being
+    near-identical they also collected repeated_instruction.
+    """
+    path = make_transcript([enqueue(STOP_HOOK_INJECTION), enqueue(STOP_HOOK_INJECTION)])
+    assert parse_session(path).prompts == []
+
+
+def test_bare_slash_command_argument_is_not_a_prompt(make_transcript):
+    """`/caveman:caveman full` leaves "full", which states no preference."""
+    path = make_transcript([enqueue("/caveman:caveman full")])
+    assert parse_session(path).prompts == []
+
+
+def test_skill_body_reduced_to_a_bare_argument_is_not_a_prompt(make_transcript):
+    """The same "full" also arrives as a 4.6 kB SKILL.md ending ARGUMENTS: full."""
+    body = (
+        "Base directory for this skill: C:\\x\\caveman\n\nRespond terse like smart "
+        "caveman.\n\n## Boundaries\n\nCode/commits/PRs: write normal.\n\nARGUMENTS: full"
+    )
+    path = make_transcript([enqueue(body)])
+    assert parse_session(path).prompts == []
+
+
+def test_one_word_prompt_typed_on_its_own_is_still_a_prompt(make_transcript):
+    """The bare-argument filter applies to command residue only, never free text."""
+    path = make_transcript([enqueue("commit"), enqueue("why?")])
+    assert texts(parse_session(path)) == ["commit", "why?"]
+
+
 def test_system_reminder_stripped_but_human_text_kept(make_transcript):
     path = make_transcript(
         [enqueue("<system-reminder>be careful</system-reminder>\nsplit that file")]
