@@ -20,6 +20,15 @@ from .ledger import Ledger, Rule
 BEGIN_MARKER = "<!-- claude-adapt-rules:begin -->"
 END_MARKER = "<!-- claude-adapt-rules:end -->"
 
+# Marker pairs this tool wrote under earlier names. A CLAUDE.md written by one of
+# those still carries its block, and the splice below only recognises the current
+# pair -- so without this the new block lands *alongside* the old one and every
+# rule adopted before the rename is loaded twice in every session of every
+# project. Observed on the 2026-08-04 upgrade.
+LEGACY_MARKERS: tuple[tuple[str, str], ...] = (
+    ("<!-- claude-learn:begin -->", "<!-- claude-learn:end -->"),
+)
+
 # Soft cap on the always-on global block. Above this, rules belong in a memory
 # file (recall on demand) or a skill rather than in every prompt.
 GLOBAL_BLOCK_MAX_LINES = 120
@@ -119,11 +128,28 @@ def render_global_block(ledger: Ledger) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _block_re(begin: str, end: str, *, eat_blanks: bool = False) -> re.Pattern[str]:
+    body = re.escape(begin) + r".*?" + re.escape(end)
+    if eat_blanks:
+        body = r"\n*" + body + r"\n*"
+    return re.compile(body, re.DOTALL)
+
+
+def drop_legacy_blocks(existing: str) -> str:
+    """Remove blocks this tool wrote under an earlier name.
+
+    Surrounding blank lines go with the block so removal leaves one separator
+    rather than a growing gap. Text outside the markers is never touched.
+    """
+    for begin, end in LEGACY_MARKERS:
+        existing = _block_re(begin, end, eat_blanks=True).sub("\n\n", existing)
+    return existing
+
+
 def splice_block(existing: str, block: str) -> str:
     """Replace the marked block, or append it if absent. Idempotent."""
-    pattern = re.compile(
-        re.escape(BEGIN_MARKER) + r".*?" + re.escape(END_MARKER), re.DOTALL
-    )
+    existing = drop_legacy_blocks(existing)
+    pattern = _block_re(BEGIN_MARKER, END_MARKER)
     if pattern.search(existing):
         return pattern.sub(block.rstrip("\n"), existing)
     sep = "" if existing.endswith("\n\n") or not existing else "\n"

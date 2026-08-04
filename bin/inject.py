@@ -25,7 +25,11 @@ def main() -> int:
     try:
         from claude_adapt_rules.extract import data_dir
         from claude_adapt_rules.inject import session_start_payload
+        from claude_adapt_rules.migrate import migrate_legacy_home
 
+        # Without this the first session after an upgrade silently injects
+        # nothing: the rules exist, but under the previous state root.
+        migrate_legacy_home()
         out = data_dir()
         raw = sys.stdin.read()
         # PowerShell's pipeline prepends a UTF-8 BOM; json.loads rejects it.

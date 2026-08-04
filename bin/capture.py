@@ -23,7 +23,11 @@ def main() -> int:
     out = None
     try:
         from claude_adapt_rules.extract import data_dir, queue_transcript
+        from claude_adapt_rules.migrate import migrate_legacy_home
 
+        # Cheap no-op once done, and this hook is often the first thing to run
+        # after an upgrade -- so it is where orphaned state gets picked up.
+        migrate_legacy_home()
         out = data_dir()
         raw = sys.stdin.read()
         if not raw.strip():
