@@ -89,6 +89,9 @@ class Rule:
     applies: str = ""  # "universal" | "project" | "" (unjudged: count-gated)
     status: str = "proposed"
     enforceable: bool = False  # mechanically checkable -> belongs in a hook
+    # The mechanical check itself, once someone writes it: {tool, pattern, message}.
+    # ``enforceable`` says a hook is possible; this is the hook. See guards.py.
+    guard: dict = field(default_factory=dict)
     first_seen: str = ""
     adopted: str = ""
     last_violated: str = ""

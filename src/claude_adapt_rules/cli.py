@@ -19,8 +19,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import extract as extract_mod
+from . import guards as guards_mod
 from . import render as render_mod
 from .ledger import Ledger, Rule
+from .migrate import migrate_legacy_home
 from .signals import score_session, select
 from .transcripts import cutoff, iter_session_files, parse_all, projects_root
 
@@ -293,6 +295,70 @@ def cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_guards(args: argparse.Namespace) -> int:
+    """List, attach or clear the mechanical checks behind enforceable rules."""
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+
+    if args.clear:
+        rule = ledger.rules.get(args.clear)
+        if rule is None:
+            print(f"unknown id: {args.clear}")
+            return 2
+        rule.guard = {}
+        ledger.save()
+        print(f"{rule.id}: guard cleared; the rule is prose again")
+        return 0
+
+    if args.set:
+        rule = ledger.rules.get(args.set)
+        if rule is None:
+            print(f"unknown id: {args.set}")
+            return 2
+        if not args.pattern:
+            print("--set needs --pattern")
+            return 2
+        rule.guard = {
+            "tool": args.tool,
+            "pattern": args.pattern,
+            "message": args.message or rule.rule,
+        }
+        try:
+            guards_mod.build_guard(rule)  # refuse to store what cannot compile
+        except guards_mod.GuardError as exc:
+            rule.guard = {}
+            print(exc)
+            return 2
+        ledger.save()
+        render_mod.write_tier_files(ledger)
+        print(f"{rule.id}: guarded on {args.tool} /{args.pattern}/")
+        if rule.status != "adopted":
+            print(f"  note: status is {rule.status}; guards only fire once adopted")
+        return 0
+
+    active = guards_mod.active_guards(ledger)
+    print(f"enforced by a hook ({len(active)}):")
+    for guard in active:
+        print(f"  {guard.rule_id} [{guard.tool}] /{guard.pattern.pattern}/")
+    if not active:
+        print("  none")
+
+    pending = guards_mod.unguarded_enforceable(ledger)
+    print(f"\nmechanically enforceable, still only prose ({len(pending)}):")
+    for rule in pending:
+        print(f"  {rule.id} [{rule.scope}] {rule.rule[:70]}")
+    if not pending:
+        print("  none")
+    else:
+        # `=` form, not a space: a pattern beginning with `-` is otherwise parsed
+        # as an option, and the ones worth guarding usually are flags.
+        print(
+            "\nAttach one with:\n"
+            "  claude-adapt-rules guards --set R-0024 --tool Bash "
+            "--pattern=--no-verify --message='commit hooks are the gate'"
+        )
+    return 0
+
+
 def cmd_rot(args: argparse.Namespace) -> int:
     ledger = Ledger(Path(args.ledger) if args.ledger else None)
     buckets = ledger.rot_report(quiet_days=args.quiet_days)
@@ -549,6 +615,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument("--ledger")
     p_render.set_defaults(func=cmd_render)
 
+    p_guards = sub.add_parser(
+        "guards", help="rules enforced by a hook, and which ones still could be"
+    )
+    p_guards.add_argument("--ledger")
+    p_guards.add_argument("--set", metavar="RULE_ID", help="attach a guard to this rule")
+    p_guards.add_argument("--tool", default="*", help="tool name to gate, or * for any")
+    p_guards.add_argument("--pattern", help="regex; a match refuses the call")
+    p_guards.add_argument("--message", default="", help="reason shown when it fires")
+    p_guards.add_argument("--clear", metavar="RULE_ID", help="remove a rule's guard")
+    p_guards.set_defaults(func=cmd_guards)
+
     p_rot = sub.add_parser("rot", help="which adopted rules are working")
     p_rot.add_argument("--ledger")
     p_rot.add_argument("--quiet-days", type=int, default=30)
@@ -599,6 +676,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    # Before anything constructs a Ledger: a rename left earlier state under the
+    # old root, and starting from an empty ledger would restart rule ids at
+    # R-0001 against a CLAUDE.md that already cites them.
+    for note in migrate_legacy_home():
+        print(f"migrated {note}")
     return int(args.func(args) or 0)
 
 
