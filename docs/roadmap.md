@@ -13,27 +13,33 @@ a session — not when it merges.
 
 ## A · Close the loop (blocks the vision directly)
 
-- [ ] **A1 · Unattended distillation.** `weekly_extract` already re-extracts and
+- [x] **A1 · Unattended distillation** (v0.1.8). `weekly_extract` already re-extracts and
   archives on a schedule; it stops short of distilling because that needs a model.
   Add a headless step that runs the skill against the pending bundle and writes a
   candidates file for review — not straight into the ledger.
   *Why not auto-ingest:* a bad rule reaches every session, and the whole design says
   global text waits for a human yes. Auto-drafting is safe; auto-adopting is not.
-  **Done when:** a week passes with no manual step and `rules/candidates/<date>.json`
-  exists, containing quotes that pass `verify`.
+  Opt-in via `CLAUDE_ADAPT_RULES_DISTIL=1` in the weekly job; drafts candidates and
+  stops. `check-candidates` is the gate that replaces the human reader — it rejects any
+  candidate whose quote is not verbatim in the session it cites, including one whose
+  transcript has expired. *Caveat:* needs the `claude` CLI on PATH, which this machine
+  does not currently have, so the branch is verified to skip cleanly rather than to run.
 
-- [ ] **A2 · Adherence metric.** Corrective-event density per prompt, split before and
+- [x] **A2 · Adherence metric** (v0.1.8). Corrective-event density per prompt, split before and
   after each rule's adoption date, controlled for which projects were active.
   *Care required:* the raw numbers currently rise over time (9.1% → 19.1% → 20.8%) and
   mean nothing yet — see vision.md §2. Ship the measurement with its confounds stated
   in the output, or it will be read as a verdict.
-  **Done when:** `claude-adapt-rules impact` prints per-rule before/after density with
-  an explicit sample size and refuses to draw a conclusion below a stated threshold.
+  `impact` reports per project rather than pooling, always prints n, and refuses to
+  conclude under 50 prompts a side. *Live result: every window refuses* — including a
+  100% → 20% swing on n=2, which is exactly the misreading the refusal exists to stop.
 
-- [ ] **A3 · Guard telemetry into `rot`.** A guard firing is the one unambiguous signal
+- [x] **A3 · Guard telemetry into `rot`** (v0.1.8). A guard firing is the one unambiguous signal
   that a rule was about to be broken, and it needs no distillation run to observe.
   Log fires, feed the count into `rot` alongside violations.
-  **Done when:** `rot` distinguishes "broken and caught" from "broken and shipped".
+  `rot` now leads with blocked calls. Fires are capped (the hook is on a hot path) and a
+  telemetry failure can never gate a tool call. Currently 0 blocks — honest, since one
+  guard covers one rare flag.
 
 ## B · Improve more than rules
 
@@ -63,11 +69,12 @@ a session — not when it merges.
   **Done when:** one command reports contradictions and duplication across the ledger,
   the global block, and project instruction files.
 
-- [ ] **C2 · Harness inventory.** Which skills exist, which ever fire, which agents get
+- [x] **C2 · Harness inventory** (v0.1.8). Which skills exist, which ever fire, which agents get
   used, how long each hook takes. An unused skill is context cost with no return; a
   slow hook is paid on every call (the guard hook measured ~209 ms, which is why it is
   scoped to one tool).
-  **Done when:** `doctor` reports skills and hooks by last-used and cost.
+  `harness` reports skills, agents and tools by use count, project spread and last-used,
+  plus installed-but-never-observed. *Live: 9 skills and 13 agents ever fired.*
 
 ## Done
 

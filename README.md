@@ -394,6 +394,45 @@ tests/                        suite run with `python -m pytest`
 No rules ship with the plugin — the ledger starts empty and everything you distil stays
 in `~/.claude-adapt-rules/`.
 
+## Closing the loop
+
+Capture was automatic; everything after it was not. The weekly job can now draft
+candidates unattended:
+
+```bash
+CLAUDE_ADAPT_RULES_DISTIL=1   # opt-in, needs the `claude` CLI on PATH
+```
+
+It **drafts and stops.** Ingest stays manual: a bad rule reaches every session of every
+project, and global text waits for a human yes. What replaces the human *reader* is a
+mechanical gate:
+
+```bash
+claude-adapt-rules check-candidates <file> --write-accepted <file>
+```
+
+Every quote must be verbatim in the session it cites, or the candidate is dropped. This
+is stricter than `verify`: an expired transcript rejects a candidate rather than passing,
+because there is no rule to protect yet and admitting an uncheckable quote is how
+unverifiable rules are born.
+
+## Is any of it working?
+
+```bash
+claude-adapt-rules impact      # correction rate before vs after adoption, per project
+claude-adapt-rules rot         # broken-and-caught vs broken-and-shipped
+claude-adapt-rules harness     # which skills, agents and tools ever fire
+```
+
+`impact` is built to **refuse to conclude**. It reports per project rather than pooling,
+always prints the sample size, and says "no conclusion" under 50 prompts a side. On the
+real corpus every window currently refuses — including a 100% → 20% swing on n=2, which
+is precisely the reading the refusal exists to prevent. A number that looks like a verdict
+gets read as one.
+
+`rot` now leads with guard fires, because a block is the one signal available without a
+distillation run: it separates *broken and caught* from *broken and shipped*.
+
 ## Where this is going
 
 [`docs/vision.md`](docs/vision.md) states the goal — every correction costs the user

@@ -173,6 +173,36 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check_candidates(args: argparse.Namespace) -> int:
+    """Gate a candidates file before ingest. The unattended distil step's safety net."""
+    from . import archive as archive_mod
+    from . import candidates as candidates_mod
+
+    path = Path(args.file)
+    try:
+        cands = candidates_mod.load_candidates(path)
+    except (json.JSONDecodeError, ValueError, OSError) as exc:
+        print(f"unreadable: {exc}")
+        return 2
+
+    result = candidates_mod.check(
+        cands,
+        root=Path(args.root) if args.root else None,
+        archive=list(archive_mod.archived_files(Path(args.out) if args.out else None)),
+    )
+    print(result.summary())
+    for cand, why in result.rejected:
+        print(f"  rejected ({why}): {str(cand.get('rule'))[:70]}")
+
+    if args.write_accepted and result.accepted:
+        target = Path(args.write_accepted)
+        write_text_atomic(
+            target, json.dumps({"rules": result.accepted}, indent=2, ensure_ascii=False) + "\n"
+        )
+        print(f"accepted written to {target}")
+    return 0 if result.ok else 1
+
+
 def cmd_reclassify(args: argparse.Namespace) -> int:
     """Apply judged generality to existing rules.
 
@@ -363,6 +393,37 @@ def cmd_constraints(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_harness(args: argparse.Namespace) -> int:
+    """Which skills, agents and tools ever actually fire."""
+    from . import harness as harness_mod
+
+    usages = harness_mod.collect(Path(args.root) if args.root else None)
+    used = {u.name for u in usages if u.kind == "skill"}
+    installed = harness_mod.installed_skills(Path(args.skills) if args.skills else None)
+    text = harness_mod.render(usages, never_fired=installed - used)
+    if args.out:
+        write_text_atomic(Path(args.out), text)
+        print(f"written to {args.out}")
+    else:
+        print(text)
+    return 0
+
+
+def cmd_impact(args: argparse.Namespace) -> int:
+    """Did adopting a rule change the correction rate? Usually: not enough data."""
+    from . import impact as impact_mod
+
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    sessions = parse_all(Path(args.root) if args.root else None)
+    text = impact_mod.render(ledger, sessions, rule_ids=args.ids or ())
+    if args.out:
+        write_text_atomic(Path(args.out), text)
+        print(f"written to {args.out}")
+    else:
+        print(text)
+    return 0
+
+
 def cmd_guards(args: argparse.Namespace) -> int:
     """List, attach or clear the mechanical checks behind enforceable rules."""
     ledger = Ledger(Path(args.ledger) if args.ledger else None)
@@ -430,7 +491,18 @@ def cmd_guards(args: argparse.Namespace) -> int:
 def cmd_rot(args: argparse.Namespace) -> int:
     ledger = Ledger(Path(args.ledger) if args.ledger else None)
     buckets = ledger.rot_report(quiet_days=args.quiet_days)
-    print(f"still violated (last {args.quiet_days}d) — escalate:")
+    fires = guards_mod.fire_counts(Path(args.out) if args.out else None)
+
+    # Broken-and-caught is a different problem from broken-and-shipped: the first
+    # says the guard works, the second says the prose does not.
+    print(f"broken and caught by a guard: {sum(fires.values())} block(s)")
+    for rule_id, count in sorted(fires.items(), key=lambda kv: -kv[1]):
+        rule = ledger.rules.get(rule_id)
+        print(f"  {rule_id} x{count} {(rule.rule[:60] if rule else '(unknown rule)')}")
+    if not fires:
+        print("  none — either nothing tried, or no guard covers what is being tried")
+
+    print(f"\nstill violated (last {args.quiet_days}d) — escalate:")
     for rule in buckets["escalate"] or []:
         print(f"  {rule.id} x{rule.violation_count} [{rule.scope}] {rule.rule[:70]}")
     if not buckets["escalate"]:
@@ -673,6 +745,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--ledger")
     p_ingest.set_defaults(func=cmd_ingest)
 
+    p_check = sub.add_parser(
+        "check-candidates",
+        help="validate a candidates file before ingest; the unattended distil gate",
+    )
+    p_check.add_argument("file")
+    p_check.add_argument("--root")
+    p_check.add_argument("--out")
+    p_check.add_argument(
+        "--write-accepted", help="write only the passing candidates to this path"
+    )
+    p_check.set_defaults(func=cmd_check_candidates)
+
     p_reclassify = sub.add_parser(
         "reclassify", help="judge existing rules as universal or project-specific"
     )
@@ -736,6 +820,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_constraints.add_argument("--out")
     p_constraints.set_defaults(func=cmd_constraints)
 
+    p_harness = sub.add_parser(
+        "harness", help="which skills, agents and tools ever fire"
+    )
+    p_harness.add_argument("--root")
+    p_harness.add_argument("--skills", help="skills directory (default ~/.claude/skills)")
+    p_harness.add_argument("--out")
+    p_harness.set_defaults(func=cmd_harness)
+
+    p_impact = sub.add_parser(
+        "impact", help="correction rate before vs after a rule was adopted"
+    )
+    p_impact.add_argument("ids", nargs="*", help="rule ids (default: all adopted)")
+    p_impact.add_argument("--ledger")
+    p_impact.add_argument("--root")
+    p_impact.add_argument("--out")
+    p_impact.set_defaults(func=cmd_impact)
+
     p_guards = sub.add_parser(
         "guards", help="rules enforced by a hook, and which ones still could be"
     )
@@ -749,6 +850,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_rot = sub.add_parser("rot", help="which adopted rules are working")
     p_rot.add_argument("--ledger")
+    p_rot.add_argument("--out")
     p_rot.add_argument("--quiet-days", type=int, default=30)
     p_rot.set_defaults(func=cmd_rot)
 

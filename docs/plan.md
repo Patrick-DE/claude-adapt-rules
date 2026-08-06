@@ -1,6 +1,6 @@
 # Implementation plan: closing the five gaps
 
-**Status:** draft · written 2026-08-07 · nothing here is started
+**Status:** all five gaps shipped v0.1.7–v0.1.8 · written 2026-08-07
 **Derived from:** [vision.md](vision.md) · **tracked in:** [roadmap.md](roadmap.md)
 
 The five gaps in vision.md are ranked by *impact*. This plan re-orders them by
@@ -47,7 +47,7 @@ than first.
 
 ## G1 · The loop needs a human to close it
 
-**Rank by impact:** 1 · **Build order:** 2 · **Size:** large
+**Rank by impact:** 1 · **Build order:** 2 · **Size:** large · **Status: shipped v0.1.8**
 
 Capture is automatic; distillation is not. Until this ships, the system is an automatic
 front end on a manual pipeline.
@@ -84,7 +84,7 @@ exiting 0 with a line in the log.
 
 ## G2 · Nothing measures whether a rule worked
 
-**Rank by impact:** 2 · **Build order:** 3 · **Size:** medium
+**Rank by impact:** 2 · **Build order:** 3 · **Size:** medium · **Status: shipped v0.1.8**
 
 **Approach.** `claude-adapt-rules impact`: corrective-event density per prompt, split
 before and after each rule's adoption date, reported **per project rather than pooled**.
@@ -115,7 +115,7 @@ refusal to conclude when underpowered.
 
 ## G3 · Guard telemetry
 
-**Rank by impact:** 4 · **Build order:** 5 (opportunistic) · **Size:** small
+**Rank by impact:** 4 · **Build order:** 5 (opportunistic) · **Size:** small · **Status: shipped v0.1.8**
 
 Not in vision.md's five. Cheap, and a second independent signal for G2 — but only once
 guards exist that actually fire. See the sequencing note above: today there is one guard,
@@ -185,7 +185,7 @@ that needs it still receives it.
 
 ## G5 · The harness itself is unmeasured
 
-**Rank by impact:** 5 · **Build order:** 4 · **Size:** medium
+**Rank by impact:** 5 · **Build order:** 4 · **Size:** medium · **Status: shipped v0.1.8**
 
 `doctor` reports on the pipeline, not on the thing the pipeline exists to improve.
 

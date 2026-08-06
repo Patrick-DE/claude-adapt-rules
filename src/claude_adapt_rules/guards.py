@@ -18,10 +18,13 @@ retired, and a stale gate that blocks a legitimate command is worse than no gate
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from .atomic import write_text_atomic
 from .ledger import Ledger, Rule
 
 # Which part of a tool call a guard reads. Matching the whole serialised input
@@ -168,6 +171,60 @@ def _walk_strings(value: Any, depth: int = 0) -> list[str]:
     if isinstance(value, (list, tuple)):
         return [s for v in value for s in _walk_strings(v, depth + 1)]
     return []
+
+
+FIRES_FILENAME = "guard-fires.jsonl"
+
+# The guard hook runs in front of every matched tool call, so this file is on a hot
+# path. Capped rather than rotated: the interesting number is "is this guard still
+# catching things", which the recent tail answers as well as the whole history.
+MAX_FIRES_BYTES = 256_000
+
+
+def record_fire(violation: Violation, ts: str, out: Path | None = None) -> None:
+    """Append one blocked call. Never raises: a telemetry failure must not gate a tool."""
+    try:
+        from .extract import data_dir
+
+        target = (out or data_dir()) / FIRES_FILENAME
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() and target.stat().st_size > MAX_FIRES_BYTES:
+            kept = target.read_text(encoding="utf-8", errors="replace").splitlines()
+            keep_from = len(kept) // 2
+            write_text_atomic(target, "\n".join(kept[keep_from:]) + "\n")
+        with target.open("a", encoding="utf-8") as fh:
+            fh.write(
+                json.dumps(
+                    {"ts": ts, "rule": violation.guard.rule_id,
+                     "tool": violation.guard.tool, "matched": violation.matched},
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    except (OSError, ValueError):
+        pass
+
+
+def fire_counts(out: Path | None = None) -> dict[str, int]:
+    """Blocked calls per rule id. A guard that never fires is telling you something."""
+    from .extract import data_dir
+
+    target = (out or data_dir()) / FIRES_FILENAME
+    counts: dict[str, int] = {}
+    if not target.is_file():
+        return counts
+    with target.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if rule := str(rec.get("rule") or ""):
+                counts[rule] = counts.get(rule, 0) + 1
+    return counts
 
 
 def _haystacks(tool_name: str, tool_input: Any) -> list[str]:

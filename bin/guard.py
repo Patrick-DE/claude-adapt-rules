@@ -30,7 +30,7 @@ def main() -> int:
     out = None
     try:
         from claude_adapt_rules.extract import data_dir
-        from claude_adapt_rules.guards import active_guards, check
+        from claude_adapt_rules.guards import active_guards, check, record_fire
         from claude_adapt_rules.ledger import Ledger
         from claude_adapt_rules.migrate import migrate_legacy_home
 
@@ -51,6 +51,11 @@ def main() -> int:
         violation = check(tool_name, payload.get("tool_input"), guards)
         if violation is None:
             return ALLOW
+        # A fire is the one signal that needs no distillation run to observe: the
+        # agent was about to break a rule and was stopped.
+        record_fire(
+            violation, datetime.now(tz=timezone.utc).isoformat(timespec="seconds"), out=out
+        )
         sys.stderr.write(violation.reason + "\n")
         return BLOCK
     except Exception:  # noqa: BLE001 - deliberate, see contract above

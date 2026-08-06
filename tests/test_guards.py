@@ -114,6 +114,57 @@ def test_enforceable_rules_without_a_guard_are_listed(tmp_path):
     assert [r.id for r in unguarded_enforceable(ledger)] == ["R-0024"]
 
 
+def test_a_fire_is_recorded_so_rot_can_see_it(tmp_path, monkeypatch):
+    """A block is the one signal available without a distillation run."""
+    from claude_adapt_rules.guards import fire_counts, record_fire
+
+    monkeypatch.setenv("CLAUDE_ADAPT_RULES_DATA_DIR", str(tmp_path / "data"))
+    ledger = _ledger(tmp_path, [_rule("R-0024", guard=NO_VERIFY)])
+    violation = check("Bash", {"command": "git commit --no-verify"}, active_guards(ledger))
+    assert violation is not None
+
+    record_fire(violation, "2026-08-07T00:00:00+00:00")
+    record_fire(violation, "2026-08-07T00:01:00+00:00")
+    assert fire_counts() == {"R-0024": 2}
+
+
+def test_no_fires_reads_as_zero_not_as_an_error(tmp_path, monkeypatch):
+    from claude_adapt_rules.guards import fire_counts
+
+    monkeypatch.setenv("CLAUDE_ADAPT_RULES_DATA_DIR", str(tmp_path / "data"))
+    assert fire_counts() == {}
+
+
+def test_the_fire_log_is_capped_because_it_sits_on_a_hot_path(tmp_path, monkeypatch):
+    from claude_adapt_rules import guards as guards_mod
+
+    monkeypatch.setenv("CLAUDE_ADAPT_RULES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(guards_mod, "MAX_FIRES_BYTES", 400)
+    ledger = _ledger(tmp_path, [_rule("R-0024", guard=NO_VERIFY)])
+    violation = check("Bash", {"command": "git commit --no-verify"}, active_guards(ledger))
+
+    for i in range(60):
+        guards_mod.record_fire(violation, f"2026-08-07T00:{i:02d}:00+00:00")
+    size = (tmp_path / "data" / guards_mod.FIRES_FILENAME).stat().st_size
+    assert size < 4000  # bounded, not unbounded growth
+    assert guards_mod.fire_counts()["R-0024"] > 0  # and still usable
+
+
+def test_telemetry_failure_never_blocks_a_tool_call(tmp_path, monkeypatch):
+    """This runs in front of every matched call; a logging fault must not gate it."""
+    from claude_adapt_rules import guards as guards_mod
+
+    monkeypatch.setenv("CLAUDE_ADAPT_RULES_DATA_DIR", str(tmp_path / "data"))
+    ledger = _ledger(tmp_path, [_rule("R-0024", guard=NO_VERIFY)])
+    violation = check("Bash", {"command": "git commit --no-verify"}, active_guards(ledger))
+
+    def boom(*_a, **_k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(guards_mod.Path, "mkdir", boom)
+    guards_mod.record_fire(violation, "2026-08-07T00:00:00+00:00")  # must not raise
+
+
 def test_old_ledgers_load_without_a_guard_field(tmp_path):
     path = tmp_path / "ledger.json"
     path.write_text(
