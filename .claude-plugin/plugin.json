@@ -1,6 +1,6 @@
 {
   "name": "claude-adapt-rules",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Mines your Claude Code sessions for the corrections you had to repeat, then distils them into evidence-backed rules — per-repo automatically, global only with your approval.",
   "author": {
     "name": "Patrick Eisenschmidt"

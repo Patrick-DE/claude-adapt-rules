@@ -1,6 +1,6 @@
 [project]
 name = "claude-adapt-rules"
-version = "0.1.9"
+version = "0.1.10"
 description = "Mine Claude Code sessions for corrections; distil them into global and per-repo rules."
 requires-python = ">=3.12"
 # Runtime is stdlib-only on purpose: the SessionEnd hook imports this package on
