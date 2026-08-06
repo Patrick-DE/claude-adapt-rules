@@ -290,3 +290,51 @@ Same split as everything else: **model proposes, deterministic code applies**.
 3. **Proposals only.** Same reason G1 does not auto-adopt.
 
 **Depends on:** G5, for skill review to mean anything.
+
+---
+
+## Rejected: codebase-drift staleness detection
+
+Considered and **rejected 2026-08-07**. The idea, taken from the official
+`claude-md-management` plugin: flag a rule that names a file, command or identifier which
+no longer exists, so the rule is now wrong or meaningless. It would sit alongside the two
+staleness notions already modelled — evidence staleness (`verify`) and behavioural
+staleness (`rot`).
+
+Two independent lines of evidence killed it.
+
+**Measured on the ledger.** Of 42 live rules, **2** name a concrete artifact — R-0026
+(`start_debug.bat`) and R-0027 (`releases/canvas-debug.log`). Both resolve today, so there
+are zero instances. Widening to tools and dependencies reaches 10 rules, but most of those
+names are generic (`JSON`, `MCP`, `Ctrl+C`, `git stash`) and the rest (`ServiceNow`, `ADO`)
+are products no repo check can resolve. Both detectable artifacts also live in a *different*
+checkout than the one a check would run in.
+
+**Measured against a real run.** The `claude-md-management` plugin was run against
+`unrealengine-debugger` and found four genuine problems. An existence check would have
+caught **none** of them:
+
+| finding | what it actually is | existence check finds it? |
+| --- | --- | --- |
+| doc claims `npm run dev` has no watch, but `start_debug.bat` runs `dev:watch` | prose contradicts a script's *body* | no — both files exist |
+| `cargo` does not update the compiled client | missing knowledge | no |
+| Vite binds IPv6-only | missing knowledge, found by probing | no |
+| two map resolvers, one wrong | missing convention, found by debugging | no |
+
+Three of four are **absence**, not staleness. The category is wrong, not merely the count.
+
+**What that run did reveal**, in the operator's own words: *none is discoverable by reading
+the repo — each only shows up when something executes and lies to you.* That names a third
+signal class this system is blind to. It mines user corrections (`signals.py`) and repeated
+manual work (`workflows.py`); an agent discovering that a documented claim is false is
+neither, and `transcripts.py` deliberately never mines assistant text, on the grounds that
+doing so learns the agent's words back as the user's. Closing that gap means breaking that
+boundary, which is a decision in its own right and not taken here.
+
+**Revisit when** a rule is found in the wild that is actively wrong because the code moved
+under it — one real instance, not a hypothetical. The precedent is the LLM review pass
+above: both were argued for from plausible use cases that measurement did not support.
+
+**Built instead:** the part of the idea that is in scope — auditing the *harness* rather
+than the rules. `harness` now reports agents used but not loadable, roster entries with no
+file behind them, and agents shelved by renaming. Shipped v0.1.10; see the roadmap.

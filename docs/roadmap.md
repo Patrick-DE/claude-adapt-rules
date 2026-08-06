@@ -74,7 +74,22 @@ a session — not when it merges.
   slow hook is paid on every call (the guard hook measured ~209 ms, which is why it is
   scoped to one tool).
   `harness` reports skills, agents and tools by use count, project spread and last-used,
-  plus installed-but-never-observed. *Live: 9 skills and 13 agents ever fired.*
+  plus installed-but-never-observed. Agent hygiene added v0.1.10: used-but-not-loadable,
+  roster entries with no file, and agents shelved by renaming — resolved per working
+  directory, since a project's `.claude/agents/` shadows the global one.
+  *Live: 9 skills and 13 agents ever fired; one shelved global agent found.*
+
+## Rejected on evidence
+
+Kept so the argument is not re-run. Both were proposed from plausible use cases that
+measurement did not support; see [plan.md](plan.md) for the reasoning.
+
+- **A second LLM step to review the rules** — 42 adopted rules, one near-duplicate pair
+  that `near_duplicates` already reports, zero `rot` escalations, zero violations ever.
+  Revisit at ~100 rules or on a repeatedly-escalating rule.
+- **Codebase-drift staleness detection** — 2 of 42 rules name an artifact, both resolve.
+  A real run of `claude-md-management` found four problems and an existence check would
+  have caught none. Revisit on one real instance of a rule wrong because the code moved.
 
 ## Done
 
