@@ -29,7 +29,13 @@ here, queue preferred, overlaps de-duplicated.
 
 ## Install
 
-As a Claude Code plugin, from a local checkout:
+As a Claude Code plugin:
+
+```bash
+claude plugin marketplace add https://github.com/Patrick-DE/claude-adapt-rules.git
+```
+
+Or from a local checkout, which is what you want while iterating on the tool itself:
 
 ```bash
 claude plugin marketplace add /path/to/claude-adapt-rules
@@ -37,7 +43,8 @@ claude plugin marketplace add /path/to/claude-adapt-rules
 
 Then enable `claude-adapt-rules`. That registers two hooks — `SessionStart` (inject this
 project's rules) and `SessionEnd` (capture corrections) — plus the `/claude-adapt-rules` skill.
-Requires Python on PATH as `python`.
+A third, opt-in `PreToolUse` hook is described under [Guards](#guards-rules-the-machine-can-check).
+Requires Python ≥ 3.12 on PATH as `python`.
 
 | Platform | What loads | Notes |
 | --- | --- | --- |
@@ -64,6 +71,20 @@ Run the CLI from anywhere without installing the package:
 ```bash
 bin/claude-adapt-rules.sh status      # or bin\claude-adapt-rules.ps1 status on Windows
 ```
+
+### Upgrading from `claude-learn`
+
+The state root is derived from the tool's own name, so the rename would otherwise
+orphan everything you had: the ledger, adopted globals, repo rule files, the archive of
+cited transcripts, and the consumed-event markers. A fresh `ingest` would then restart ids
+at `R-0001` against a `CLAUDE.md` that already cited them.
+
+Nothing to run. On first use, `~/.claude-learn/` is adopted automatically — copied, never
+moved, so the old root survives as a rollback and is marked as read. Files the new root
+already has are left alone, and the two queues are merged by `(session, record)` because
+neither side is authoritative: one holds everything captured before the rename, the other
+everything after. The old `<!-- claude-learn -->` block in `~/.claude/CLAUDE.md` is
+replaced rather than appended to, so pre-rename rules stop being loaded twice.
 
 ### Using the skill without installing the plugin
 
@@ -122,6 +143,8 @@ python -m claude_adapt_rules.cli ingest ~/.claude-adapt-rules/rules/candidates/<
 python -m claude_adapt_rules.cli verify                 # every quote must be verbatim
 python -m claude_adapt_rules.cli adopt R-0001 --apply-global
 python -m claude_adapt_rules.cli rot                    # which rules aren't working
+python -m claude_adapt_rules.cli guards                 # which ones a hook could enforce
+python -m claude_adapt_rules.cli doctor                 # is any of it reaching a session
 ```
 
 Then in Claude Code: `/claude-adapt-rules` reads the bundles and writes the candidates file.
@@ -175,8 +198,52 @@ it earlier, or convert it to a hook.
 `rot` then splits adopted rules into *still being broken* (escalate) and *quiet for 30 days*
 (stop paying its token cost).
 
-Rules a regex can enforce are marked `enforceable` and belong in a `PreToolUse` hook, not
-in prose. Prose is for judgment calls.
+## Guards: rules the machine can check
+
+A rule in `CLAUDE.md` is a suggestion the model weighs against everything else in context.
+For the subset a regex can decide — `--no-verify`, a banned import, a forbidden command —
+weighing is the wrong mechanism: a `PreToolUse` hook simply refuses the call.
+
+Those rules are already flagged `enforceable`. A **guard** is the check itself:
+
+```bash
+claude-adapt-rules guards        # enforced by a hook, vs still only prose
+claude-adapt-rules guards --set R-0024 --tool Bash \
+  --pattern=--no-verify --message='run the build and suite instead'
+```
+
+Use `--pattern=` with an `=`, not a space — the patterns worth guarding are usually flags,
+and argparse would read a leading `-` as an option.
+
+Enable it by adding the hook. It is opt-in and **scoped to one tool on purpose**: the
+script costs ~209 ms per call, and gating every `Read` and `Grep` to catch one flag is a
+bad trade.
+
+```json
+"PreToolUse": [
+  { "matcher": "Bash",
+    "hooks": [ { "type": "command", "command": "python",
+      "args": ["/path/to/claude-adapt-rules/bin/guard.py"], "timeout": 10 } ] }
+]
+```
+
+Guards are read from the ledger at hook time rather than compiled into a generated script.
+A generated script goes stale the moment a rule is reworded or retired, and a stale gate
+that refuses a legitimate command is worse than no gate.
+
+Only **adopted** rules enforce, and each tool declares which input field a guard reads, so
+a pattern cannot fire on an unrelated path in the same call. `guard.py` sits in front of
+every matched tool call, so it fails open and logs — the one place here where that is
+correct. The loud path is `--set`, which refuses to store a pattern it cannot compile.
+
+Known limitation: a guard matches command *text* and cannot tell running a flag from
+mentioning it, so a command quoting the guarded string is refused. Inherent to the
+mechanism. `guards --clear R-0024` disarms without touching settings.
+
+The escalation ladder this completes: prose → still violated after adoption (`rot`) →
+reword or hoist it earlier → if a regex can decide it, make it a guard and drop it from
+`CLAUDE.md`. That last step is the only thing that stops the always-on block growing
+forever.
 
 ## Evidence integrity
 
@@ -217,6 +284,9 @@ To keep raw history longer, raise retention in `~/.claude/settings.json`:
 Both are declared by the plugin and exec `python` directly, so neither needs a shell — on
 Windows that removes the Git Bash dependency. Where only `python3` exists, change the
 `command` in `.claude-plugin/plugin.json`.
+- **PreToolUse hook** (`bin/guard.py`) — refuses a call that breaks a guarded rule. Not
+  declared by the plugin: a hook that blocks tool calls is opt-in, and you add it yourself.
+  See [Guards](#guards-rules-the-machine-can-check).
 - **Weekly refresh** — `hooks/weekly_extract.ps1` (Windows Task Scheduler) or
   `hooks/weekly_extract.sh` (cron). Both re-extract full history and then archive.
 
@@ -234,9 +304,10 @@ worth reading.
 ## Layout
 
 ```
-src/claude_adapt_rules/       transcripts, signals, extract, ledger, render, verify, archive, inject, cli
+src/claude_adapt_rules/       transcripts, signals, extract, ledger, render, verify,
+                              archive, inject, guards, migrate, cli
 skills/claude-adapt-rules/    the model-facing distillation instructions
-bin/                          hook entry points (capture, inject) + claude-adapt-rules CLI wrappers
+bin/                          hook entry points (capture, inject, guard) + CLI wrappers
 hooks/                        weekly extract for Task Scheduler (.ps1) and cron (.sh)
 .claude-plugin/               Claude Code plugin + marketplace manifests
 .codex-plugin/                Codex manifest; AGENTS.md is its context file
@@ -246,3 +317,7 @@ tests/                        suite run with `python -m pytest`
 
 No rules ship with the plugin — the ledger starts empty and everything you distil stays
 in `~/.claude-adapt-rules/`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
