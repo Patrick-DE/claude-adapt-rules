@@ -144,6 +144,8 @@ python -m claude_adapt_rules.cli verify                 # every quote must be ve
 python -m claude_adapt_rules.cli adopt R-0001 --apply-global
 python -m claude_adapt_rules.cli rot                    # which rules aren't working
 python -m claude_adapt_rules.cli guards                 # which ones a hook could enforce
+python -m claude_adapt_rules.cli workflows              # work repeated by hand
+python -m claude_adapt_rules.cli constraints            # rules for what you write next
 python -m claude_adapt_rules.cli doctor                 # is any of it reaching a session
 ```
 
@@ -161,6 +163,44 @@ Structural signals are weighted higher because they're harder to fake:
 `after_edit` is deliberately worth **zero**. 407 of 778 prompts follow an edit; scoring it
 ranks "commit and push" alongside a real correction. It only adds a point when the words
 are corrective too.
+
+## Work you repeat by hand
+
+Every signal above is corrective. That structurally cannot find work you drive by hand
+five times without ever complaining — there is no signal to find. Idea credited to
+[Task-Observer](#credits).
+
+```bash
+claude-adapt-rules workflows
+```
+
+Counts recurring tool sequences across sessions, excluding any span the user corrected,
+denied or interrupted — those are already covered above, and proposing a skill for work
+that went wrong is backwards.
+
+A candidate must reach beyond the ordinary edit loop. Measured here before that filter
+existed, the top result was `Read → Edit → Bash`, seven times across four projects: that
+is what coding *is*, and it buried everything distinctive. A sequence made only of
+`Read`/`Edit`/`Write`/`Bash`/`Grep`/`Glob` is therefore dropped. With the filter, the same
+corpus reports two candidates instead of eleven.
+
+Output is candidates, not conclusions — a repeated shape of work is worth looking at, not
+proof a skill is warranted.
+
+## Rules for the next thing you write
+
+Rules reach *sessions*. Nothing reached *authoring*, so a new skill or agent file gets
+written without the constraints its author already established, and the same correction
+gets learned again through the new artifact. Idea credited to [Task-Observer](#credits).
+
+```bash
+claude-adapt-rules constraints                 # current project + globals
+claude-adapt-rules constraints --project app --out CONSTRAINTS.md
+```
+
+Adopted rules only, globals first, as a block to paste into whatever you are writing.
+It prints rather than editing your files: writing into someone's skill file uninvited is
+the behaviour this project exists to correct.
 
 ## Scope comes from generality, not from frequency
 
@@ -301,6 +341,21 @@ schtasks /Create /TN "claude-adapt-rules weekly" /SC WEEKLY /D MON /ST 09:00 /TR
 The distil step stays manual: it needs a model. Run `/claude-adapt-rules` when the bundles look
 worth reading.
 
+### Cadence
+
+Capture is automatic and distillation is not, so the queue grows quietly until someone
+remembers it. Pick a rhythm and let `doctor` police it — it reports the *age* of the
+oldest undistilled event, not just the count, and flags anything left longer than
+`--stale-days` (default 7):
+
+```
+  pending distillation ....... 6
+  oldest pending ............. 2d (2026-08-04)
+```
+
+Weekly suits a single developer. Task-Observer's author runs reviews three mornings a week
+and reports it scales better as the library grows.
+
 ## Layout
 
 ```
@@ -317,6 +372,30 @@ tests/                        suite run with `python -m pytest`
 
 No rules ship with the plugin — the ledger starts empty and everything you distil stays
 in `~/.claude-adapt-rules/`.
+
+## Credits
+
+Three features here came from reading
+**[Task-Observer — One Skill to Rule Them All](https://github.com/rebelytics/one-skill-to-rule-them-all)**
+by **Eoghan Henn** ([rebelytics](https://rebelytics.com)), licensed
+**CC BY 4.0**:
+
+| borrowed | where it lives here |
+| --- | --- |
+| coverage gaps as a first-class category, not just corrections | `workflows` |
+| cross-cutting principles applied when artifacts are *written* | `constraints` |
+| a standing review cadence rather than ad-hoc distillation | `doctor --stale-days` |
+
+The two projects solve adjacent problems and are worth reading together. Task-Observer
+improves **skills** — the procedures — by observing live in every session, and works
+anywhere Claude runs, including web and mobile. This project distils **rules** — the
+constraints — by mining stored transcripts after the fact, which buys a verbatim evidence
+chain and rule identity at the cost of needing transcripts on disk. Only the ideas above
+were taken; no text or code was copied.
+
+## Author
+
+Built by **Patrick Eisenschmidt** — <https://github.com/Patrick-DE/claude-adapt-rules>.
 
 ## License
 

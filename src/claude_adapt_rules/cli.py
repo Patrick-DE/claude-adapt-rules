@@ -295,6 +295,38 @@ def cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_workflows(args: argparse.Namespace) -> int:
+    """Recurring hand-driven work: the candidates no corrective signal finds."""
+    from . import workflows as workflows_mod
+
+    sessions = parse_all(Path(args.root) if args.root else None, _since(args.days))
+    found = workflows_mod.collect(sessions)
+    text = workflows_mod.render(found, limit=args.limit)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        print(f"{len(found)} candidate(s) -> {args.out}")
+    else:
+        print(text)
+    return 0
+
+
+def cmd_constraints(args: argparse.Namespace) -> int:
+    """Rules as a block to paste into whatever is being written next."""
+    from . import authoring as authoring_mod
+    from .transcripts import project_name_from_cwd
+
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    project = args.project if args.project is not None else project_name_from_cwd(str(Path.cwd()))
+    rules = authoring_mod.constraints_for(project, ledger)
+    text = authoring_mod.render(project, rules)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        print(f"{len(rules)} rule(s) -> {args.out}")
+    else:
+        print(text)
+    return 0
+
+
 def cmd_guards(args: argparse.Namespace) -> int:
     """List, attach or clear the mechanical checks behind enforceable rules."""
     ledger = Ledger(Path(args.ledger) if args.ledger else None)
@@ -456,6 +488,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"queue ........................ {extract_mod.queue_path()}")
     print(f"  captured ................... {len(queue)}")
     print(f"  pending distillation ....... {len(pending)}")
+    # Capture is automatic, distillation is not, so the queue silently grows until
+    # someone remembers. Report the age of the oldest pending event, not just the
+    # count: 2 events sitting for three weeks matters more than 40 from this morning.
+    if oldest_pending := min((str(r.get("ts") or "") for r in pending if r.get("ts")), default=""):
+        age = (
+            datetime.now(tz=timezone.utc) - datetime.fromisoformat(oldest_pending)
+        ).days
+        print(f"  oldest pending ............. {age}d ({oldest_pending[:10]})")
+        if age >= args.stale_days:
+            problems.append(
+                f"{len(pending)} event(s) pending for up to {age} days: "
+                f"run the distil step (`pending` -> ingest -> archive -> consume)"
+            )
 
     log = data / "hook.log"
     if log.exists():
@@ -615,6 +660,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument("--ledger")
     p_render.set_defaults(func=cmd_render)
 
+    p_workflows = sub.add_parser(
+        "workflows", help="work repeated by hand: skill candidates, not corrections"
+    )
+    p_workflows.add_argument("--root")
+    p_workflows.add_argument("--days", type=int)
+    p_workflows.add_argument("--limit", type=int, default=15)
+    p_workflows.add_argument("--out")
+    p_workflows.set_defaults(func=cmd_workflows)
+
+    p_constraints = sub.add_parser(
+        "constraints", help="rules as a block to paste into a new skill or agent file"
+    )
+    p_constraints.add_argument("--ledger")
+    p_constraints.add_argument("--project", help="default: the current directory's project")
+    p_constraints.add_argument("--out")
+    p_constraints.set_defaults(func=cmd_constraints)
+
     p_guards = sub.add_parser(
         "guards", help="rules enforced by a hook, and which ones still could be"
     )
@@ -655,6 +717,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--ledger")
     p_doctor.add_argument("--cwd", help="project to check rule delivery for (default: current)")
     p_doctor.add_argument("--failure-days", type=int, default=7)
+    p_doctor.add_argument(
+        "--stale-days",
+        type=int,
+        default=7,
+        help="flag events left undistilled this long (default: weekly cadence)",
+    )
     p_doctor.add_argument(
         "--at-risk-days",
         type=int,
