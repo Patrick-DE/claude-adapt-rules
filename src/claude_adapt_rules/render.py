@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .atomic import write_text_atomic
 from .extract import rules_dir
-from .ledger import Ledger, Rule
+from .ledger import ON_DEMAND, Ledger, Rule
 
 BEGIN_MARKER = "<!-- claude-adapt-rules:begin -->"
 END_MARKER = "<!-- claude-adapt-rules:end -->"
@@ -113,10 +113,34 @@ def render_repo_rules(ledger: Ledger, scope: str) -> str:
     return "\n".join(lines)
 
 
-def render_global_block(ledger: Ledger) -> str:
+ON_DEMAND_FILENAME = "ON-DEMAND.md"
+
+
+def _on_demand_pointer(rules: list[Rule], path: str) -> list[str]:
+    """One line that keeps deferred rules reachable.
+
+    The triggers are named in the always-on block on purpose. A pointer that only
+    says "more rules live over there" is never followed, because nothing tells a
+    session when it should care. Naming the conditions costs one line and is the
+    entire recall mechanism.
+    """
+    if not rules:
+        return []
+    triggers = " · ".join(dict.fromkeys(r.trigger for r in rules if r.trigger))
+    # Exactly one non-blank line, because that is what it replaces. An earlier
+    # two-line version made the block *longer* when a single rule was deferred:
+    # measured 30 -> 31 lines, which defeats the entire mechanism.
+    return [f"**on demand** — read `{path}` when: {triggers}.", ""]
+
+
+def render_global_block(ledger: Ledger, on_demand_path: str = "") -> str:
     """The block that gets spliced into ``~/.claude/CLAUDE.md``."""
-    rules = [r for r in ledger.by_scope("global") if r.status == "adopted"]
+    adopted = [r for r in ledger.by_scope("global") if r.status == "adopted"]
+    rules = [r for r in adopted if r.delivery != ON_DEMAND]
+    deferred = [r for r in adopted if r.delivery == ON_DEMAND]
     rules.sort(key=lambda r: (r.category, r.id))
+    deferred.sort(key=lambda r: (r.category, r.id))
+
     lines = [BEGIN_MARKER, "", "# Learned rules (claude-adapt-rules)", ""]
     by_category: dict[str, list[Rule]] = {}
     for rule in rules:
@@ -125,8 +149,45 @@ def render_global_block(ledger: Ledger) -> str:
         lines.append(f"**{category}**")
         lines += [_rule_line(r) for r in group]
         lines.append("")
+    lines += _on_demand_pointer(
+        deferred, on_demand_path or f"~/.claude-adapt-rules/rules/global/{ON_DEMAND_FILENAME}"
+    )
     lines.append(END_MARKER)
     return "\n".join(lines) + "\n"
+
+
+def render_on_demand(ledger: Ledger) -> str:
+    """The rules that left the always-on block, with the trigger for each."""
+    rules = [
+        r
+        for r in ledger.by_scope("global")
+        if r.status == "adopted" and r.delivery == ON_DEMAND
+    ]
+    rules.sort(key=lambda r: (r.trigger, r.id))
+    lines = [
+        "# Learned rules, on demand",
+        "",
+        "Adopted global rules that do not apply to every task. They are deliberately",
+        "absent from the always-on block in `~/.claude/CLAUDE.md`, which names the",
+        "triggers below and points here. Read the section whose trigger matches the",
+        "work in front of you.",
+        "",
+    ]
+    if not rules:
+        lines += ["_None: every adopted global rule is always-on._", ""]
+        return "\n".join(lines)
+
+    by_trigger: dict[str, list[Rule]] = {}
+    for rule in rules:
+        by_trigger.setdefault(rule.trigger, []).append(rule)
+    for trigger, group in by_trigger.items():
+        lines += [f"## When: {trigger}", ""]
+        for rule in group:
+            lines.append(_rule_line(rule))
+            if rule.why:
+                lines.append(f"  - why: {rule.why}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def _block_re(begin: str, end: str, *, eat_blanks: bool = False) -> re.Pattern[str]:
@@ -179,6 +240,10 @@ def write_tier_files(ledger: Ledger, out: Path | None = None) -> list[Path]:
     adopted = global_dir / "ADOPTED.md"
     write_text_atomic(adopted, render_global_block(ledger))
     written.append(adopted)
+
+    on_demand = global_dir / ON_DEMAND_FILENAME
+    write_text_atomic(on_demand, render_on_demand(ledger))
+    written.append(on_demand)
 
     for scope in ledger.scopes():
         if not scope.startswith("repo:"):

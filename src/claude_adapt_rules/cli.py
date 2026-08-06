@@ -281,6 +281,39 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_defer(args: argparse.Namespace) -> int:
+    """Move rules out of the always-on block without retiring them."""
+    ledger = Ledger(Path(args.ledger) if args.ledger else None)
+    if not args.promote and not args.trigger:
+        print("--trigger is required: an on-demand rule with no stated condition")
+        print("is one nothing will ever read, which is worse than retiring it.")
+        return 2
+
+    moved: list[Rule] = []
+    for rule_id in args.ids:
+        rule = (
+            ledger.promote_delivery(rule_id)
+            if args.promote
+            else ledger.defer(rule_id, args.trigger)
+        )
+        if rule is None:
+            print(f"unknown id: {rule_id}")
+            continue
+        moved.append(rule)
+    if not moved:
+        return 2
+
+    ledger.save()
+    render_mod.write_tier_files(ledger)
+    where = "always-on" if args.promote else f"on demand, when: {args.trigger}"
+    print(f"{render_mod.summarize(moved)} -> {where}")
+
+    block = render_mod.render_global_block(ledger)
+    print(f"  global block is now {render_mod.block_line_count(block)} line(s)")
+    print("  re-run `adopt ... --apply-global` to write the shortened block to CLAUDE.md")
+    return 0
+
+
 def cmd_retire(args: argparse.Namespace) -> int:
     ledger = Ledger(Path(args.ledger) if args.ledger else None)
     retired = [r for rid in args.ids if (r := ledger.retire(rid))]
@@ -665,6 +698,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_adopt.add_argument("--apply-global", action="store_true", help="splice into ~/.claude/CLAUDE.md")
     p_adopt.add_argument("--claudemd", help="override target CLAUDE.md")
     p_adopt.set_defaults(func=cmd_adopt)
+
+    p_defer = sub.add_parser(
+        "defer", help="move rules out of the always-on block, kept reachable by trigger"
+    )
+    p_defer.add_argument("ids", nargs="+")
+    p_defer.add_argument("--ledger")
+    p_defer.add_argument("--trigger", help="when this rule should be read, e.g. 'building UI'")
+    p_defer.add_argument(
+        "--promote", action="store_true", help="reverse: bring rules back to always-on"
+    )
+    p_defer.set_defaults(func=cmd_defer)
 
     p_retire = sub.add_parser("retire", help="mark rules retired")
     p_retire.add_argument("ids", nargs="+")

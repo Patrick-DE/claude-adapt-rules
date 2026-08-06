@@ -37,11 +37,11 @@ a session — not when it merges.
 
 ## B · Improve more than rules
 
-- [ ] **B1 · A recall-on-demand tier.** Today a rule is always-on or nothing, so
-  `CLAUDE.md` only grows and guards are the only exit. Add a third tier for rules that
-  are valuable but situational, retrieved when relevant rather than loaded always.
-  **Done when:** a rule can be moved out of the always-on block without being retired,
-  and a session that needs it still gets it.
+- [x] **B1 · A recall-on-demand tier** (v0.1.7). `defer R-00XX --trigger "..."` moves a
+  rule out of the always-on block while it stays adopted; the block keeps one line naming
+  the triggers and pointing at `rules/global/ON-DEMAND.md`. A trigger is mandatory,
+  because an on-demand rule with no stated condition is one nothing will ever read.
+  *Verified live:* R-0008 (UI theming) deferred, block 30 → 28 lines, rule still reachable.
 
 - [ ] **B2 · Draft a skill from a workflow candidate.** `workflows` already finds work
   repeated by hand. Turn a candidate into a `SKILL.md` draft: trigger description

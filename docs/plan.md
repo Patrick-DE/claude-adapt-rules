@@ -142,7 +142,20 @@ is a slow leak on a hot path; cap the file and never let a write failure block t
 
 ## G4 · The always-on tier only grows
 
-**Rank by impact:** 3 · **Build order:** 1 · **Size:** medium
+**Rank by impact:** 3 · **Build order:** 1 · **Size:** medium · **Status: shipped v0.1.7**
+
+**What shipped.** `Rule.delivery` (`always` | `on_demand`) plus a mandatory `Rule.trigger`.
+`defer` moves a rule out; `defer --promote` brings it back. The always-on block keeps
+exactly one line naming the triggers and pointing at `rules/global/ON-DEMAND.md`.
+
+**What the build taught.** The first pointer was two lines, which made the block *longer*
+when a single rule was deferred — measured 30 → 31 on the real ledger, defeating the whole
+mechanism. The unit test missed it because it deferred three rules at once, where the
+saving is real. The pointer is now one line, so deferring one rule is neutral and two or
+more is a saving; a test asserts the block never grows.
+
+**Still open:** recall telemetry. Nothing observes whether a deferred rule is ever read,
+so the graveyard risk below is real but unmeasured.
 
 A rule is `CLAUDE.md` or nothing. Guards are the only exit, and they only take rules a
 regex can decide — a set now close to exhausted. Everything else accumulates: 21 global

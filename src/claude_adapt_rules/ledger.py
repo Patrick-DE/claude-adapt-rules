@@ -47,6 +47,16 @@ VALID_CATEGORIES = (
 )
 VALID_STATUS = ("proposed", "adopted", "retired")
 
+# Delivery mode: how a rule reaches a session, as opposed to where it applies.
+#
+# Always-on text is the scarcest resource in the system -- every line competes for
+# attention in every prompt of every project -- and until now a rule was either
+# always-on or retired. Guards were the only exit, and they only take the subset a
+# regex can decide, which is close to exhausted. Everything else accumulated.
+ALWAYS = "always"
+ON_DEMAND = "on_demand"
+VALID_DELIVERY = (ALWAYS, ON_DEMAND)
+
 _TOKEN_RE = re.compile(r"[a-z0-9_]{3,}")
 _STOP = frozenset(
     """the and for with that this you your not never always must should when into
@@ -90,6 +100,14 @@ class Rule:
     applies: str = ""  # "universal" | "project" | "" (unjudged: count-gated)
     status: str = "proposed"
     enforceable: bool = False  # mechanically checkable -> belongs in a hook
+    # How the rule reaches a session. "always" costs tokens in every prompt of
+    # every project; "on_demand" costs one shared pointer line and is read only
+    # when its trigger applies. Orthogonal to scope, which says *where* a rule
+    # applies rather than *how* it is delivered.
+    delivery: str = ALWAYS
+    # The condition under which an on_demand rule should be read. Without it the
+    # rule is unreachable, so `defer` refuses to move a rule without one.
+    trigger: str = ""
     # The mechanical check itself, once someone writes it: {tool, pattern, message}.
     # ``enforceable`` says a hook is possible; this is the hook. See guards.py.
     guard: dict = field(default_factory=dict)
@@ -360,6 +378,28 @@ class Ledger:
             return None
         rule.status = "adopted"
         rule.adopted = _now()
+        return rule
+
+    def defer(self, rule_id: str, trigger: str) -> Rule | None:
+        """Move a rule out of the always-on block without retiring it.
+
+        A trigger is mandatory: an on-demand rule with no stated condition is a
+        rule nothing will ever read, which is strictly worse than retiring it —
+        it still looks live in the ledger.
+        """
+        rule = self.rules.get(rule_id)
+        if rule is None or not trigger.strip():
+            return None
+        rule.delivery = ON_DEMAND
+        rule.trigger = trigger.strip()
+        return rule
+
+    def promote_delivery(self, rule_id: str) -> Rule | None:
+        """Bring a rule back into the always-on block."""
+        rule = self.rules.get(rule_id)
+        if rule is None:
+            return None
+        rule.delivery = ALWAYS
         return rule
 
     def retire(self, rule_id: str) -> Rule | None:

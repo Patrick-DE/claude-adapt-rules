@@ -238,6 +238,26 @@ it earlier, or convert it to a hook.
 `rot` then splits adopted rules into *still being broken* (escalate) and *quiet for 30 days*
 (stop paying its token cost).
 
+## Three delivery tiers, not two
+
+A rule used to be always-on or nothing, so `~/.claude/CLAUDE.md` could only grow —
+guards were the sole exit, and they only take the subset a regex can decide.
+
+```bash
+claude-adapt-rules defer R-0008 --trigger "building or restyling a user interface"
+claude-adapt-rules defer R-0008 --promote        # bring it back
+```
+
+The rule stays adopted and leaves the always-on block. What remains there is one line
+naming the triggers and pointing at `rules/global/ON-DEMAND.md`, which holds the rules in
+full, grouped by trigger.
+
+The trigger is mandatory. A deferred rule with no stated condition is one nothing will
+ever read, which is strictly worse than retiring it — it still looks live in the ledger.
+
+`delivery` is orthogonal to `scope`: scope says *where* a rule applies, delivery says
+*how* it arrives. Both a global and a repo rule can be always-on or on-demand.
+
 ## Guards: rules the machine can check
 
 A rule in `CLAUDE.md` is a suggestion the model weighs against everything else in context.
