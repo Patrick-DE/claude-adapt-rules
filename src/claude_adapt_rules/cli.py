@@ -400,13 +400,20 @@ def cmd_harness(args: argparse.Namespace) -> int:
     usages = harness_mod.collect(Path(args.root) if args.root else None)
     used = {u.name for u in usages if u.kind == "skill"}
     installed = harness_mod.installed_skills(Path(args.skills) if args.skills else None)
-    text = harness_mod.render(usages, never_fired=installed - used)
+    hygiene = harness_mod.check_agents(
+        usages,
+        agents_root=Path(args.agents) if args.agents else None,
+        claudemd=Path(args.claudemd) if args.claudemd else None,
+    )
+    text = harness_mod.render(usages, never_fired=installed - used, hygiene=hygiene)
     if args.out:
         write_text_atomic(Path(args.out), text)
         print(f"written to {args.out}")
     else:
         print(text)
-    return 0
+    # Non-zero on a broken handoff: an agent that is used or advertised but absent
+    # fails at dispatch, and the failure reads as a bug in the task.
+    return 0 if hygiene.ok else 1
 
 
 def cmd_impact(args: argparse.Namespace) -> int:
@@ -825,6 +832,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_harness.add_argument("--root")
     p_harness.add_argument("--skills", help="skills directory (default ~/.claude/skills)")
+    p_harness.add_argument("--agents", help="agents directory (default ~/.claude/agents)")
+    p_harness.add_argument("--claudemd", help="roster source (default ~/.claude/CLAUDE.md)")
     p_harness.add_argument("--out")
     p_harness.set_defaults(func=cmd_harness)
 
