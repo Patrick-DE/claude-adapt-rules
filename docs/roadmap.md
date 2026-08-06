@@ -1,10 +1,15 @@
 # Roadmap
 
 **Status:** active · last reviewed 2026-08-06 · derived from [vision.md](vision.md)
+**Build order and rationale:** [plan.md](plan.md) — it differs from the impact order below.
 
-Ordered by how much each closes the gap between "captures automatically" and
-"improves automatically". Each item states the acceptance test, because a feature
-here is only done when it changes a session — not when it merges.
+Ordered below by how much each closes the gap between "captures automatically" and
+"improves automatically". **That is impact order, not build order** — see
+[plan.md](plan.md), which builds B1 first because everything that produces more rules
+makes the always-on tier worse until it has an exit.
+
+Each item states the acceptance test, because a feature here is only done when it changes
+a session — not when it merges.
 
 ## A · Close the loop (blocks the vision directly)
 
