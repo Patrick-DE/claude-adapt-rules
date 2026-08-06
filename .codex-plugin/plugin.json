@@ -1,6 +1,6 @@
 {
   "name": "claude-adapt-rules",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Mines agent sessions for the corrections you had to repeat, then distils them into evidence-backed rules — per-repo automatically, global only with your approval.",
   "author": {
     "name": "Patrick Eisenschmidt"
