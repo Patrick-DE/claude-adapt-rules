@@ -21,7 +21,7 @@ from pathlib import Path
 from . import extract as extract_mod
 from . import guards as guards_mod
 from . import render as render_mod
-from .ledger import Ledger, Rule
+from .ledger import Ledger, LedgerError, Rule
 from .migrate import migrate_legacy_home
 from .signals import score_session, select
 from .transcripts import cutoff, iter_session_files, parse_all, projects_root
@@ -492,11 +492,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     # someone remembers. Report the age of the oldest pending event, not just the
     # count: 2 events sitting for three weeks matters more than 40 from this morning.
     if oldest_pending := min((str(r.get("ts") or "") for r in pending if r.get("ts")), default=""):
-        age = (
-            datetime.now(tz=timezone.utc) - datetime.fromisoformat(oldest_pending)
-        ).days
-        print(f"  oldest pending ............. {age}d ({oldest_pending[:10]})")
-        if age >= args.stale_days:
+        # The queue tolerates malformed records elsewhere, so the health command
+        # must not be the one thing that dies on one. A bad stamp costs the
+        # staleness check, not the report.
+        try:
+            stamped = datetime.fromisoformat(oldest_pending)
+        except ValueError:
+            stamped = None
+        age = (datetime.now(tz=timezone.utc) - stamped).days if stamped else -1
+        shown = f"{age}d ({oldest_pending[:10]})" if stamped else f"unparseable ({oldest_pending[:30]!r})"
+        print(f"  oldest pending ............. {shown}")
+        if stamped and age >= args.stale_days:
             problems.append(
                 f"{len(pending)} event(s) pending for up to {age} days: "
                 f"run the distil step (`pending` -> ingest -> archive -> consume)"
@@ -749,7 +755,13 @@ def main(argv: list[str] | None = None) -> int:
     # R-0001 against a CLAUDE.md that already cites them.
     for note in migrate_legacy_home():
         print(f"migrated {note}")
-    return int(args.func(args) or 0)
+    try:
+        return int(args.func(args) or 0)
+    except LedgerError as exc:
+        # Loud and non-zero. The alternative was starting from an empty ledger,
+        # which is how 43 rules become 0.
+        print(f"error: {exc}")
+        return 3
 
 
 if __name__ == "__main__":

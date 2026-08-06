@@ -14,6 +14,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
+from .atomic import write_text_atomic
 from .extract import rules_dir
 from .ledger import Ledger, Rule
 
@@ -172,11 +173,11 @@ def write_tier_files(ledger: Ledger, out: Path | None = None) -> list[Path]:
     global_dir = root / "global"
     global_dir.mkdir(parents=True, exist_ok=True)
     proposed = global_dir / "PROPOSED.md"
-    proposed.write_text(render_proposed_global(ledger), encoding="utf-8")
+    write_text_atomic(proposed, render_proposed_global(ledger))
     written.append(proposed)
 
     adopted = global_dir / "ADOPTED.md"
-    adopted.write_text(render_global_block(ledger), encoding="utf-8")
+    write_text_atomic(adopted, render_global_block(ledger))
     written.append(adopted)
 
     for scope in ledger.scopes():
@@ -187,7 +188,7 @@ def write_tier_files(ledger: Ledger, out: Path | None = None) -> list[Path]:
         target_dir = root / "repos" / safe
         target_dir.mkdir(parents=True, exist_ok=True)
         path = target_dir / "rules.md"
-        path.write_text(render_repo_rules(ledger, scope), encoding="utf-8")
+        write_text_atomic(path, render_repo_rules(ledger, scope))
         written.append(path)
     return written
 

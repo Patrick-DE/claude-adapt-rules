@@ -22,6 +22,8 @@ import shutil
 from collections.abc import Iterator
 from pathlib import Path
 
+from .atomic import write_text_atomic
+
 # Earlier names of this tool, newest first. Each was ``~/.<name>``.
 LEGACY_HOME_NAMES: tuple[str, ...] = ("claude-learn",)
 
@@ -102,10 +104,10 @@ def _merge_queues(legacy: Path, current: Path) -> int:
     if added <= 0:
         return 0
     merged.sort(key=lambda r: str(r.get("ts") or ""))
-    current.parent.mkdir(parents=True, exist_ok=True)
-    with current.open("w", encoding="utf-8") as fh:
-        for rec in merged:
-            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    write_text_atomic(
+        current,
+        "".join(json.dumps(rec, ensure_ascii=False) + "\n" for rec in merged),
+    )
     return added
 
 

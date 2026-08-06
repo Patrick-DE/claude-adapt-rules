@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .atomic import write_text_atomic
 from .signals import Event, Stats, is_acknowledgement, score_session, select
 from .transcripts import Session, parse_all, parse_session
 
@@ -224,13 +225,11 @@ def write_outputs(
         kept = project_events[:max_events]
         name = kept[0].prompt.project_name or project
         path = bundle_dir / f"{project}.md"
-        path.write_text(
-            _bundle_markdown(project, name, kept, dropped), encoding="utf-8"
-        )
+        write_text_atomic(path, _bundle_markdown(project, name, kept, dropped))
         bundles.append(path)
 
     report = report_dir / "extract.md"
-    report.write_text(_report_markdown(stats, events), encoding="utf-8")
+    write_text_atomic(report, _report_markdown(stats, events))
 
     return ExtractResult(
         stats=stats,

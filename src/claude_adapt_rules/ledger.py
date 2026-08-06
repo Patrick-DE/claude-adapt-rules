@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .atomic import write_text_atomic
 from .classify import PROJECT, UNIVERSAL, resolve_applies
 from .extract import rules_dir
 
@@ -152,6 +153,10 @@ class IngestResult:
     vetoed: list[tuple[str, str]] = field(default_factory=list)  # (rule text, reason)
 
 
+class LedgerError(RuntimeError):
+    """The ledger exists but is unreadable. Never swallowed into an empty store."""
+
+
 class Ledger:
     """JSON-backed rule store. Small by design; read whole, write whole."""
 
@@ -167,8 +172,16 @@ class Ledger:
             return
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, ValueError, OSError):
-            return
+        except (json.JSONDecodeError, ValueError, OSError) as exc:
+            # Returning an empty ledger here used to look like a fresh install:
+            # next_id restarted at 1, colliding with ids already adopted into
+            # CLAUDE.md, and the next save wrote the emptiness back permanently.
+            # A file that exists but will not parse is a fault, not an absence.
+            raise LedgerError(
+                f"{self.path} exists but could not be read ({exc}). "
+                f"Refusing to continue with an empty ledger; restore it from "
+                f"{self.path.name}.tmp or your backup."
+            ) from exc
         self.next_id = int(raw.get("next_id", 1))
         for d in raw.get("rules", []):
             try:
@@ -178,15 +191,14 @@ class Ledger:
             self.rules[rule.id] = rule
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "schema": SCHEMA_VERSION,
             "updated": _now(),
             "next_id": self.next_id,
             "rules": [r.to_dict() for r in self.rules.values()],
         }
-        self.path.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        write_text_atomic(
+            self.path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
         )
 
     # ------------------------------------------------------------ queries ---

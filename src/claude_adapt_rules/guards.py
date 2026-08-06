@@ -27,16 +27,29 @@ from .ledger import Ledger, Rule
 # Which part of a tool call a guard reads. Matching the whole serialised input
 # would let a pattern fire on an unrelated file path, so each tool names the
 # field that carries the thing being asked for.
+# MultiEdit is deliberately absent: its input nests the edits under `edits`, so a
+# top-level "new_string" key never exists and a guard on it would silently never
+# fire. An unmapped tool falls through to scanning every string value, which
+# over-matches rather than failing open -- the right direction for a gate.
 GUARD_FIELDS: dict[str, tuple[str, ...]] = {
     "Bash": ("command",),
     "PowerShell": ("command",),
     "Edit": ("new_string",),
-    "MultiEdit": ("new_string",),
     "Write": ("content",),
     "NotebookEdit": ("new_source",),
 }
 
 ANY_TOOL = "*"
+
+# Longest text a guard pattern is run over. `re` has no timeout, and a
+# user-authored pattern with nested quantifiers is quadratic or worse: measured,
+# `(a+)+$` took 26 s on 28 characters, which the hook would pay on every call.
+# Truncating bounds the damage; BAD_PATTERN_RE below stops it being stored.
+MAX_HAYSTACK = 4000
+
+# Nested quantifiers -- `(x+)+`, `(x*)*`, `(x+)*` -- are the classic catastrophic
+# backtracking shape. Refused at set time rather than discovered at hook time.
+BAD_PATTERN_RE = re.compile(r"\([^)]*[+*][^)]*\)\s*[+*]")
 
 
 @dataclass(slots=True)
@@ -70,6 +83,12 @@ def build_guard(rule: Rule) -> Guard:
     pattern = str(spec.get("pattern") or "")
     if not pattern:
         raise GuardError(f"{rule.id}: guard has no 'pattern'")
+    if BAD_PATTERN_RE.search(pattern):
+        raise GuardError(
+            f"{rule.id}: pattern {pattern!r} nests quantifiers, which can backtrack "
+            f"catastrophically and stall every guarded tool call. Rewrite it without "
+            f"a repeated group."
+        )
     try:
         compiled = re.compile(pattern)
     except re.error as exc:
@@ -95,10 +114,28 @@ def active_guards(ledger: Ledger) -> list[Guard]:
             continue
         try:
             guards.append(build_guard(rule))
-        except GuardError:
-            continue
+        except GuardError as exc:
+            # Skipping keeps the session alive, but silently skipping means a
+            # typo'd pattern stops enforcing and nothing ever says so.
+            _log_broken_guard(exc)
     guards.sort(key=lambda g: g.rule_id)
     return guards
+
+
+def _log_broken_guard(exc: GuardError) -> None:
+    """Record a guard that could not be compiled. Never raises."""
+    try:
+        from datetime import datetime, timezone
+
+        from .extract import data_dir
+
+        target = data_dir()
+        target.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+        with (target / "hook.log").open("a", encoding="utf-8") as fh:
+            fh.write(f"[{stamp}] guard disabled: {exc}\n")
+    except OSError:
+        pass
 
 
 def unguarded_enforceable(ledger: Ledger) -> list[Rule]:
@@ -112,13 +149,39 @@ def unguarded_enforceable(ledger: Ledger) -> list[Rule]:
     return rules
 
 
+_MAX_DEPTH = 6
+
+
+def _walk_strings(value: Any, depth: int = 0) -> list[str]:
+    """Every string anywhere in a tool input, including nested ones.
+
+    Taking only top-level string values missed nested payloads entirely -- a
+    tool whose edits live in ``edits: [{new_string: ...}]`` would be scanned as
+    just its file path, so the guard silently never fired.
+    """
+    if depth > _MAX_DEPTH:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [s for v in value.values() for s in _walk_strings(v, depth + 1)]
+    if isinstance(value, (list, tuple)):
+        return [s for v in value for s in _walk_strings(v, depth + 1)]
+    return []
+
+
 def _haystacks(tool_name: str, tool_input: Any) -> list[str]:
     if not isinstance(tool_input, dict):
-        return [str(tool_input)] if tool_input else []
-    fields = GUARD_FIELDS.get(tool_name)
-    if fields is None:
-        return [v for v in tool_input.values() if isinstance(v, str)]
-    return [tool_input[f] for f in fields if isinstance(tool_input.get(f), str)]
+        texts = [str(tool_input)] if tool_input else []
+    else:
+        fields = GUARD_FIELDS.get(tool_name)
+        if fields is None:
+            # Unmapped tool: scan everything. Over-matching is the safe direction
+            # for a gate; silently never firing is not.
+            texts = _walk_strings(tool_input)
+        else:
+            texts = [tool_input[f] for f in fields if isinstance(tool_input.get(f), str)]
+    return [t[:MAX_HAYSTACK] for t in texts]
 
 
 def check(tool_name: str, tool_input: Any, guards: list[Guard]) -> Violation | None:
