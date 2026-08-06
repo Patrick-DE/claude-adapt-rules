@@ -21,6 +21,7 @@ from pathlib import Path
 from . import extract as extract_mod
 from . import guards as guards_mod
 from . import render as render_mod
+from .atomic import write_text_atomic
 from .ledger import Ledger, LedgerError, Rule
 from .migrate import migrate_legacy_home
 from .signals import score_session, select
@@ -273,7 +274,9 @@ def cmd_adopt(args: argparse.Namespace) -> int:
         backup = target.with_suffix(target.suffix + ".claude-adapt-rules.bak")
         shutil.copy2(target, backup)
         print(f"backup: {backup}")
-    target.write_text(render_mod.splice_block(existing, block), encoding="utf-8")
+    # Atomic: this file is loaded into every session of every project, so a
+    # truncated write would corrupt the user's global instructions everywhere.
+    write_text_atomic(target, render_mod.splice_block(existing, block))
     print(f"applied {lines}-line global block to {target}")
     return 0
 
@@ -522,8 +525,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if failures:
             print(f"  last ....................... {failures[-1][:100]}")
         if args.reset_log:
-            log.rename(log.with_suffix(".log.reviewed"))
-            print(f"  log moved to ............... {log.with_suffix('.log.reviewed')}")
+            # rename() onto an existing target raises on Windows, so the second
+            # --reset-log crashed. Append instead: the reviewed log is history and
+            # discarding an earlier batch of failures would hide them for good.
+            reviewed = log.with_suffix(".log.reviewed")
+            with reviewed.open("a", encoding="utf-8") as fh:
+                fh.write(log.read_text(encoding="utf-8", errors="replace"))
+            log.unlink()
+            print(f"  log moved to ............... {reviewed}")
         elif recent:
             problems.append(
                 f"{len(recent)} hook failure(s) in the last {args.failure_days} days: {log}"

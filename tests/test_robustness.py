@@ -6,7 +6,9 @@ Each of these was reproduced against the real install before it was fixed.
 from __future__ import annotations
 
 import json
+import os
 import time
+from pathlib import Path
 
 import pytest
 
@@ -149,6 +151,67 @@ def test_a_broken_guard_is_logged_not_silently_dropped(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 # 3: the health command must survive the mess it exists to report
 # --------------------------------------------------------------------------- #
+
+
+def test_adopt_never_half_writes_claude_md(tmp_path, monkeypatch, capsys):
+    """It is loaded into every session of every project; a truncated write is global."""
+    ledger = tmp_path / "ledger.json"
+    candidates = tmp_path / "cands.json"
+    candidates.write_text(
+        json.dumps(
+            {
+                "rules": [
+                    {
+                        "rule": "state assumptions instead of asking twice",
+                        "why": "w",
+                        "category": "process",
+                        "applies": "universal",
+                        "evidence": [
+                            {"project": "a", "session": "s1", "ts": "2026-08-01", "quote": "q", "uuid": "1"}
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert cli.main(["ingest", str(candidates), "--ledger", str(ledger)]) == 0
+
+    target = tmp_path / "CLAUDE.md"
+    target.write_text("# Global\n\nexisting content\n", encoding="utf-8")
+
+    # Fail only the CLAUDE.md replace. Patching every replace would raise inside
+    # write_tier_files first, and the test would pass without ever exercising the
+    # write it is about -- which is exactly what a mutation check caught.
+    real_replace = os.replace
+
+    def boom(src, dst, *args, **kwargs):
+        if Path(dst).name == "CLAUDE.md":
+            raise OSError("disk full")
+        return real_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr("claude_adapt_rules.atomic.os.replace", boom)
+    with pytest.raises(OSError):
+        cli.main(
+            ["adopt", "R-0001", "--ledger", str(ledger), "--apply-global",
+             "--claudemd", str(target)]
+        )
+    assert target.read_text(encoding="utf-8") == "# Global\n\nexisting content\n"
+    assert not list(tmp_path.glob("CLAUDE.md.tmp"))
+
+
+def test_reset_log_can_run_twice(tmp_path, monkeypatch, capsys):
+    """rename() onto an existing target raises on Windows; the second run crashed."""
+    monkeypatch.setenv("CLAUDE_ADAPT_RULES_HOME", str(tmp_path))
+    log = tmp_path / "data" / "hook.log"
+    log.parent.mkdir(parents=True)
+    for line in ("first failed", "second failed"):
+        log.write_text(f"[2026-08-06T00:00:00+00:00] {line}\n", encoding="utf-8")
+        cli.main(["doctor", "--reset-log"])
+    reviewed = (tmp_path / "data" / "hook.log.reviewed").read_text(encoding="utf-8")
+    # Both batches survive: discarding the earlier one would hide those failures.
+    assert "first failed" in reviewed and "second failed" in reviewed
+    assert not log.exists()
 
 
 def test_doctor_survives_a_malformed_queue_timestamp(tmp_path, monkeypatch, capsys):

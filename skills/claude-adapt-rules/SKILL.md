@@ -1,5 +1,5 @@
 ---
-name: adapt-rules
+name: claude-adapt-rules
 description: Use when asked to learn from past sessions, distil corrections into rules, update CLAUDE.md from session history, or run the claude-adapt-rules pipeline. Mines Claude Code transcripts for moments the user corrected the agent and turns them into scoped, evidence-backed rules.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
@@ -140,6 +140,32 @@ every project).
 ```bash
 claude-adapt-rules rot     # what to escalate, what to retire
 ```
+
+## Escalating a rule that keeps being broken
+
+`rot` names adopted rules still being violated. Prose already failed for those, so
+rewording is the weakest response. Check whether a regex can decide it instead:
+
+```bash
+claude-adapt-rules guards                      # enforced vs still only prose
+claude-adapt-rules guards --set R-0024 --tool Bash \
+  --pattern=--no-verify --message='run the build instead'
+```
+
+Use `--pattern=` with an `=`; a pattern starting with `-` is otherwise read as an option.
+A guarded rule is refused at the tool call rather than weighed in context, and can then
+leave the always-on block — the only thing that stops it growing.
+
+## Two reports that are not about corrections
+
+```bash
+claude-adapt-rules workflows     # work repeated by hand: skill candidates
+claude-adapt-rules constraints   # rules as a block for the next skill/agent file you write
+claude-adapt-rules doctor        # is any of this reaching a session?
+```
+
+`workflows` exists because every signal above is corrective, so work driven by hand
+without complaint leaves no trace. It reports candidates, not conclusions.
 
 ## Always archive after ingesting
 

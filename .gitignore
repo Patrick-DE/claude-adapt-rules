@@ -1,5 +1,5 @@
-# User state never belongs in the install directory. Both live in ~/.claude-learn/;
-# these entries only catch runs that point CLAUDE_LEARN_HOME back at the repo.
+# User state never belongs in the install directory. Both live in ~/.claude-adapt-rules/;
+# these entries only catch runs that point CLAUDE_ADAPT_RULES_HOME back at the repo.
 data/
 rules/
 

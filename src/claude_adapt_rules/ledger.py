@@ -133,7 +133,10 @@ def decide_scope(
     """
     projects = {e.project for e in evidence if e.project}
     sessions = {e.session for e in evidence if e.session}
-    project = next(iter(projects), fallback_project) or "unknown"
+    # First evidence, not set order. Evidence is append-ordered, so this is the
+    # project the rule was born in; picking from the set meant a repo rule could
+    # silently move to another project's rules file as evidence accumulated.
+    project = next((e.project for e in evidence if e.project), "") or fallback_project or "unknown"
 
     if applies == UNIVERSAL:
         return "global"
@@ -270,7 +273,13 @@ class Ledger:
                     e for e in evidence if e.uuid not in {x.uuid for x in existing.evidence}
                 ]
                 existing.evidence.extend(new_ev)
-                existing.scope = decide_scope(existing.evidence, fallback_project="")
+                # Pass the judged generality through. Without it the count gate
+                # took over and a rule judged `project` was widened to `global`
+                # the moment evidence from a second project merged in -- exactly
+                # the promotion classify.py exists to prevent, and silent.
+                existing.scope = decide_scope(
+                    existing.evidence, fallback_project="", applies=existing.applies
+                )
                 if existing.status == "adopted" and latest > existing.adopted:
                     existing.violation_count += 1
                     existing.last_violated = latest
@@ -333,8 +342,12 @@ class Ledger:
             return None
         known = {ev.uuid for ev in target.evidence}
         target.evidence.extend(ev for ev in source.evidence if ev.uuid not in known)
-        # Widen the target's scope if the merged evidence now clears the gate.
-        gated = decide_scope(target.evidence, fallback_project="")
+        # Widen the target's scope if the merged evidence now clears the gate --
+        # unless it was judged project-specific, which no amount of evidence
+        # changes. Narrow stays the safe default.
+        gated = decide_scope(
+            target.evidence, fallback_project="", applies=target.applies
+        )
         if gated == "global":
             target.scope = gated
         source.status = "retired"

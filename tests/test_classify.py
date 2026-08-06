@@ -77,6 +77,50 @@ def test_a_project_claim_is_never_widened():
     assert veto is None
 
 
+def _project_candidate(project: str, session: str, uuid: str) -> dict:
+    return {
+        "rule": "Start the backend through the debug launcher script.",
+        "why": "a plain invocation ignores later edits",
+        "category": "tooling",
+        "applies": "project",
+        "evidence": [
+            {"project": project, "session": session, "ts": "2026-07-28", "quote": "q", "uuid": uuid}
+        ],
+    }
+
+
+def test_merging_evidence_never_widens_a_project_rule(tmp_path):
+    """The count gate took over on merge, silently promoting a local quirk global."""
+    ledger = Ledger(tmp_path / "ledger.json")
+    rule = ledger.ingest([_project_candidate("alpha", "s1", "u1")]).created[0]
+    assert rule.scope == "repo:alpha"
+
+    ledger.ingest([_project_candidate("beta", "s2", "u2")])
+    assert rule.applies == PROJECT
+    assert rule.scope == "repo:alpha"
+
+
+def test_hand_merging_never_widens_a_project_rule(tmp_path):
+    ledger = Ledger(tmp_path / "ledger.json")
+    keeper = ledger.ingest([_project_candidate("alpha", "s1", "u1")]).created[0]
+    dupe = ledger.ingest(
+        [
+            {
+                "rule": "Totally unrelated wording about launching services locally.",
+                "why": "w",
+                "category": "tooling",
+                "applies": "project",
+                "evidence": [
+                    {"project": "beta", "session": "s2", "ts": "2026-07-28", "quote": "q", "uuid": "u2"}
+                ],
+            }
+        ]
+    ).created[0]
+
+    ledger.merge(dupe.id, keeper.id)
+    assert keeper.scope == "repo:alpha"
+
+
 def test_ingest_reports_the_veto(tmp_path):
     ledger = Ledger(tmp_path / "ledger.json")
     result = ledger.ingest(
