@@ -46,6 +46,25 @@ DENIAL = (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_state(tmp_path: Path, monkeypatch):
+    """No test may touch the real ``~/.claude-adapt-rules``.
+
+    Caught for real: `active_guards` gained a log-on-broken-guard path after its
+    test was written, so a test that never mentioned the data directory silently
+    appended to the user's live hook.log on every run. Redirecting per test kills
+    the whole class of leak rather than the one instance.
+    """
+    for var in (
+        "CLAUDE_ADAPT_RULES_HOME",
+        "CLAUDE_ADAPT_RULES_DATA_DIR",
+        "CLAUDE_ADAPT_RULES_RULES_DIR",
+        "CLAUDE_ADAPT_RULES_LEDGER",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("CLAUDE_ADAPT_RULES_HOME", str(tmp_path / "state"))
+
+
 @pytest.fixture
 def make_transcript(tmp_path: Path):
     """Write records to <root>/<project-slug>/<session>.jsonl and return the path."""
