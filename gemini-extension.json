@@ -1,6 +1,6 @@
 {
   "name": "claude-adapt-rules",
   "description": "Mines agent sessions for the corrections you had to repeat, then distils them into evidence-backed rules — per-repo automatically, global only with your approval.",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "contextFileName": "GEMINI.md"
 }
