@@ -374,6 +374,15 @@ tests/                        suite run with `python -m pytest`
 No rules ship with the plugin — the ledger starts empty and everything you distil stays
 in `~/.claude-adapt-rules/`.
 
+## Where this is going
+
+[`docs/vision.md`](docs/vision.md) states the goal — every correction costs the user
+once — the principles each defect in this repo paid for, and the five places the
+system still falls short. [`docs/roadmap.md`](docs/roadmap.md) turns those into a
+checklist with acceptance tests.
+
+The shortest summary of the gap: capture is automatic, everything after it is not.
+
 ## Credits
 
 Three features here came from reading
