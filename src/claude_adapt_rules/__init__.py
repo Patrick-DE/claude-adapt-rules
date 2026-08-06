@@ -9,4 +9,4 @@ Everything except `/learn-rules` is deterministic and dependency-free.
 """
 
 __all__ = ["extract", "ledger", "render", "signals", "transcripts"]
-__version__ = "0.1.3"
+__version__ = "0.1.4"
