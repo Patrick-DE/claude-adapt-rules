@@ -360,7 +360,8 @@ and reports it scales better as the library grows.
 
 ```
 src/claude_adapt_rules/       transcripts, signals, extract, ledger, render, verify,
-                              archive, inject, guards, migrate, cli
+                              archive, inject, guards, workflows, authoring,
+                              migrate, cli
 skills/claude-adapt-rules/    the model-facing distillation instructions
 bin/                          hook entry points (capture, inject, guard) + CLI wrappers
 hooks/                        weekly extract for Task Scheduler (.ps1) and cron (.sh)
